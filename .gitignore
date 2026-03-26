@@ -28,6 +28,7 @@ wheels/
 .env.prod
 .env.local
 .env.*.local
+*.backup
 
 # Data (JSON files in data/ directory, but not config files)
 data/
@@ -47,10 +48,14 @@ data/*.json
 .temp/
 supabase/.branches/
 supabase/.temp/
+supabase/snippets/
 
 # Logs
 *.log
 logs/
+
+# Runtime files
+*.pid
 
 # Serena
 .serena/

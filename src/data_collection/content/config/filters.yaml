@@ -1,0 +1,75 @@
+# Content filtering rules for RAG relevance
+
+# Keywords that indicate RAG-related content (at least one must match)
+rag_keywords:
+  - "rag"
+  - "retrieval"
+  - "augmented"
+  - "embedding"
+  - "vector"
+  - "semantic search"
+  - "chunking"
+  - "document retrieval"
+  - "context retrieval"
+  - "llm retrieval"
+  - "reranking"
+  - "hyde"
+  - "fusion"
+  - "query expansion"
+
+# Skip articles with these keywords in title or content
+skip_keywords:
+  - "hiring"
+  - "job"
+  - "career"
+  - "webinar"
+  - "event"
+  - "we're hiring"
+  - "join our team"
+  - "job posting"
+  - "now hiring"
+
+# RAG topics taxonomy for categorization
+rag_topics:
+  chunking:
+    - "chunking"
+    - "chunk size"
+    - "text splitting"
+    - "document splitting"
+
+  embedding:
+    - "embedding"
+    - "vector"
+    - "sentence transformer"
+    - "text embedding"
+
+  retrieval:
+    - "retrieval"
+    - "semantic search"
+    - "similarity search"
+    - "vector search"
+
+  reranking:
+    - "rerank"
+    - "reranking"
+    - "cross-encoder"
+
+  optimization:
+    - "performance"
+    - "optimization"
+    - "latency"
+    - "cost"
+    - "efficiency"
+
+  debugging:
+    - "debugging"
+    - "troubleshooting"
+    - "error"
+    - "fix"
+    - "issue"
+
+  architecture:
+    - "architecture"
+    - "pattern"
+    - "design"
+    - "best practice"

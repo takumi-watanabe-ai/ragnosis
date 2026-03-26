@@ -1,0 +1,52 @@
+name: Daily Embeddings (All Sources)
+
+on:
+  schedule:
+    # Run at 10:00 AM UTC daily (after data collection)
+    - cron: '0 10 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  create-embeddings:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create vector embeddings
+        id: embed
+        continue-on-error: true  # Can retry manually if fails
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "🧮 Creating embeddings for all new data..."
+          echo "📦 Loading sentence-transformer model (this takes ~4 minutes)..."
+          python src/data_collection/vector_embedder.py
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.embed.outcome }}" != "success" ]; then
+            echo "::warning::⚠️ Embedding creation failed"
+            echo "💡 Data is safe in SQL tables - you can retry with:"
+            echo "   make pipeline"
+            echo "   OR"
+            echo "   python src/data_collection/vector_embedder.py"
+          else
+            echo "✅ All embeddings created successfully!"
+            echo "🎯 Vector search is up to date"
+          fi

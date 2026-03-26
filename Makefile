@@ -1,14 +1,9 @@
-.PHONY: help ingest setup chat
+.PHONY: help setup chat scrape-feeds scrape-sitemap scrape-all embed pipeline env-prod env-local env-status
 
 help: ## Show available commands
 	@echo "RAGnosis - Simple Development Commands"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
-
-ingest: ## Run data ingestion to Supabase
-	@echo "📥 Running data ingestion..."
-	python src/data_collection/ingest.py
-	@echo "✅ Ingestion complete!"
 
 setup: ## Setup local development (Supabase + Ollama + Models)
 	@echo "🚀 Setting up local development environment..."
@@ -32,7 +27,7 @@ setup: ## Setup local development (Supabase + Ollama + Models)
 	@echo ""
 	@echo "✅ Setup complete!"
 	@echo ""
-	@echo "💡 Next step: Run 'make ingest' to populate data, then 'make chat'"
+	@echo "💡 Next step: Run 'make pipeline' to populate data, then 'make chat'"
 
 chat: ## Run chat interface (starts edge functions + UI)
 	@echo "💬 Starting RAGnosis..."
@@ -44,3 +39,59 @@ chat: ## Run chat interface (starts edge functions + UI)
 	@echo ""
 	@echo "Starting Streamlit UI..."
 	@streamlit run src/agent/research_agent.py; kill `cat .edge-function.pid` 2>/dev/null || true; rm -f .edge-function.pid
+
+scrape-feeds: ## Scrape RSS feeds for new articles (daily)
+	@echo "📡 Scraping RSS feeds..."
+	@echo ""
+	python -m src.data_collection.content.blog_orchestrator feeds
+	@echo ""
+	@echo "✅ RSS feed scraping complete!"
+	@echo "💡 Next: Run 'make embed' to create embeddings"
+
+scrape-sitemap: ## Scrape from sitemaps (historical backfill - RECOMMENDED)
+	@echo "🗺️  Scraping blog articles from sitemaps..."
+	@echo "💡 This fetches ALL articles (100s-1000s vs ~15 from RSS)"
+	@echo ""
+	python -m src.data_collection.content.blog_orchestrator sitemap
+	@echo ""
+	@echo "✅ Sitemap scraping complete!"
+	@echo "💡 Next: Run 'make embed' to create embeddings"
+
+scrape-all: ## Scrape all blogs (sitemap + feeds)
+	@echo "🔄 Running full blog scraping pipeline..."
+	@echo ""
+	@make scrape-sitemap
+	@echo ""
+	@make scrape-feeds
+
+embed: ## Create vector embeddings for all new data
+	@echo "🧮 Creating vector embeddings..."
+	@echo "📦 Loading sentence-transformer model (takes ~30 seconds)..."
+	@echo ""
+	python src/data_collection/vector_embedder.py
+	@echo ""
+	@echo "✅ Embeddings complete!"
+
+pipeline: ## Fetch market data (HF/GitHub/Trends) - run 'make embed' after
+	@echo "🚀 Fetching market data..."
+	@echo ""
+	python src/data_collection/pipeline.py
+	@echo ""
+	@echo "✅ Market data collected!"
+	@echo "💡 Next: Run 'make embed' to create embeddings"
+
+env-prod: ## Switch to production environment (.env.prod → .env)
+	@if [ ! -f .env.prod ]; then echo "❌ .env.prod not found!"; exit 1; fi
+	@cp .env .env.local.backup 2>/dev/null || true
+	@cp .env.prod .env
+	@echo "✅ Switched to PRODUCTION environment"
+	@echo "⚠️  WARNING: All commands now use PRODUCTION database!"
+
+env-local: ## Switch to local environment (.env.local → .env)
+	@if [ ! -f .env.local ]; then echo "❌ .env.local not found!"; exit 1; fi
+	@cp .env.local .env
+	@echo "✅ Switched to LOCAL environment"
+
+env-status: ## Show current environment
+	@echo "Current environment (.env):"
+	@grep "SUPABASE_URL" .env 2>/dev/null || echo "❌ No .env file found"

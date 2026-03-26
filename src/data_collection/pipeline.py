@@ -1,5 +1,6 @@
 """
-Simple RAG data pipeline - fetches, inserts, and embeds in one go.
+Simple RAG data pipeline - fetches HF/GitHub/Trends and inserts to SQL.
+Note: Run 'make embed' separately to create vector embeddings.
 """
 
 import logging
@@ -140,24 +141,16 @@ def main():
         logger.warning("   Continuing without trends data...")
 
     # ========================================
-    # STEP 4: Vector Embeddings
-    # ========================================
-    logger.info("\n🧮 STEP 3: Creating vector embeddings...")
-
-    from vector_embedder import VectorEmbedder
-
-    embedder = VectorEmbedder(supabase_url, supabase_key)
-    embedder.run_embedding_pipeline(snapshot_date)
-
-    # ========================================
     # Summary
     # ========================================
     logger.info("\n" + "=" * 60)
-    logger.info("✅ PIPELINE COMPLETE")
+    logger.info("✅ DATA COLLECTION COMPLETE")
     logger.info("=" * 60)
     logger.info(f"   📊 HF Models: {len(rag_models)}")
     logger.info(f"   📊 GitHub Repos: {len(rag_repos)}")
     logger.info(f"   📊 Google Trends: {len(trends)}")
+    logger.info("=" * 60)
+    logger.info("💡 Next: Run 'make embed' to create vector embeddings")
     logger.info("=" * 60 + "\n")
 
 

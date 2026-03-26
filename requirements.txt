@@ -13,6 +13,7 @@ openai==1.30.1  # For OpenRouter API (OpenAI-compatible)
 requests==2.31.0
 beautifulsoup4==4.12.3
 feedparser==6.0.11  # For RSS feeds
+pyyaml==6.0.1  # For blog scraper configs
 pytrends  # Google Trends API
 huggingface_hub  # For HuggingFace model data with descriptions
 

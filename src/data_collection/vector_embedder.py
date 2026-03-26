@@ -42,6 +42,7 @@ class VectorEmbedder:
         supabase_url: str,
         supabase_key: str,
         vector_table: str = "ragnosis_docs",
+        blog_vector_table: str = "blog_docs",
         embedding_model: str = None,
     ):
         """Initialize vector embedder."""
@@ -53,7 +54,8 @@ class VectorEmbedder:
 
         # Initialize Supabase client
         self.client: Client = create_client(supabase_url, supabase_key)
-        self.vector_table = vector_table
+        self.vector_table = vector_table  # For models/repos
+        self.blog_vector_table = blog_vector_table  # For blog articles
 
         # Initialize embedding model
         logger.info(f"📦 Loading embedding model: {embedding_model}")
@@ -70,22 +72,78 @@ class VectorEmbedder:
 
         logger.info(f"✅ Vector embedder initialized")
 
+    def _chunk_text(self, text: str, chunk_size: int = 2000, overlap: int = 200) -> List[str]:
+        """
+        Chunk text into overlapping segments.
+        
+        Args:
+            text: Text to chunk
+            chunk_size: Target chunk size in characters (~500 tokens)
+            overlap: Overlap between chunks in characters
+            
+        Returns:
+            List of text chunks
+        """
+        if len(text) <= chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            end = start + chunk_size
+            
+            # Try to break at paragraph boundary
+            if end < len(text):
+                # Look for paragraph break within last 20% of chunk
+                search_start = end - int(chunk_size * 0.2)
+                para_break = text.rfind('\n\n', search_start, end)
+                
+                if para_break != -1:
+                    end = para_break + 2  # Include newlines
+                else:
+                    # Fall back to sentence boundary
+                    sent_break = text.rfind('. ', search_start, end)
+                    if sent_break != -1:
+                        end = sent_break + 2
+            
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            
+            # Move to next chunk with overlap
+            start = end - overlap if end < len(text) else end
+        
+        return chunks
+
     def get_existing_ids(self) -> Set[str]:
-        """Get all existing IDs from vector database to avoid duplicates."""
-        logger.info(f"🔍 Checking existing entries in {self.vector_table}...")
+        """Get all existing IDs from vector databases (both tables) to avoid duplicates."""
+        logger.info(f"🔍 Checking existing entries in vector DBs...")
+
+        existing_ids = set()
 
         try:
-            # Query all IDs from vector table
+            # Check ragnosis_docs (models/repos)
             response = self.client.table(self.vector_table).select("id").execute()
-            existing_ids = {row["id"] for row in response.data}
-
-            logger.info(f"   Found {len(existing_ids)} existing entries in vector DB")
-            return existing_ids
+            ids_main = {row["id"] for row in response.data}
+            existing_ids.update(ids_main)
+            logger.info(f"   Found {len(ids_main)} existing entries in {self.vector_table}")
 
         except Exception as e:
-            logger.warning(f"⚠️  Could not fetch existing IDs: {e}")
-            logger.warning("   Proceeding without deduplication check")
-            return set()
+            logger.warning(f"⚠️  Could not fetch IDs from {self.vector_table}: {e}")
+
+        try:
+            # Check blog_docs (articles)
+            response = self.client.table(self.blog_vector_table).select("id").execute()
+            ids_blog = {row["id"] for row in response.data}
+            existing_ids.update(ids_blog)
+            logger.info(f"   Found {len(ids_blog)} existing entries in {self.blog_vector_table}")
+
+        except Exception as e:
+            logger.warning(f"⚠️  Could not fetch IDs from {self.blog_vector_table}: {e}")
+
+        logger.info(f"   Total: {len(existing_ids)} existing entries across all vector tables")
+        return existing_ids
 
     def fetch_models_from_sql(self, snapshot_date: str = None) -> List[Dict]:
         """Fetch RAG-related models from traditional DB."""
@@ -135,8 +193,27 @@ class VectorEmbedder:
             logger.error(f"❌ Failed to fetch repos: {e}")
             return []
 
+    def fetch_articles_from_sql(self) -> List[Dict]:
+        """Fetch blog articles from traditional DB."""
+        logger.info(f"📂 Fetching articles from blog_articles...")
+
+        try:
+            response = (
+                self.client.table("blog_articles")
+                .select("*")
+                .execute()
+            )
+
+            articles = response.data
+            logger.info(f"   Found {len(articles)} articles")
+            return articles
+
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch articles: {e}")
+            return []
+
     def prepare_embedding_data(
-        self, models: List[Dict], repos: List[Dict], existing_ids: Set[str]
+        self, models: List[Dict], repos: List[Dict], articles: List[Dict], existing_ids: Set[str]
     ) -> List[Dict]:
         """
         Prepare data for embedding, filtering out existing entries.
@@ -190,8 +267,60 @@ class VectorEmbedder:
             }
             items.append(item)
 
+        # Process blog articles with conditional chunking
+        CHUNK_THRESHOLD = 2500  # Chunk if article > 2500 chars
+
+        for article in articles:
+            article_id = article["id"]
+
+            # Skip if already exists in vector DB
+            if article_id in existing_ids:
+                logger.debug(f"   Skipping existing article: {article_id}")
+                continue
+
+            full_content = article.get("content", "")
+            title = article["title"]
+
+            # Conditional chunking based on content length
+            if len(full_content) <= CHUNK_THRESHOLD:
+                # Short article: single embedding (preserve full context)
+                item = {
+                    "id": article_id,
+                    "parent_id": None,
+                    "chunk_index": 0,
+                    "name": title,
+                    "description": full_content,
+                    "doc_type": "blog_article",
+                    "url": article["url"],
+                    "rag_category": article.get("source"),
+                    "published_at": article.get("published_at"),
+                    "rag_topics": article.get("rag_topics", []),
+                    "scrape_method": article.get("scrape_method"),
+                }
+                items.append(item)
+            else:
+                # Long article: chunk to preserve ALL content (especially middle)
+                chunks = self._chunk_text(full_content, chunk_size=2000, overlap=200)
+                logger.debug(f"   Chunking article '{title[:50]}' into {len(chunks)} chunks")
+
+                for i, chunk in enumerate(chunks):
+                    chunk_item = {
+                        "id": f"{article_id}_chunk_{i}",
+                        "parent_id": article_id,
+                        "chunk_index": i,
+                        "name": f"{title} (part {i+1}/{len(chunks)})",
+                        "description": chunk,
+                        "doc_type": "blog_article",
+                        "url": article["url"],
+                        "rag_category": article.get("source"),
+                        "published_at": article.get("published_at"),
+                        "rag_topics": article.get("rag_topics", []),
+                        "scrape_method": article.get("scrape_method"),
+                    }
+                    items.append(chunk_item)
+
         logger.info(f"✅ Prepared {len(items)} NEW items for embedding")
-        logger.info(f"   (Skipped {len(models) + len(repos) - len(items)} existing entries)")
+        logger.info(f"   (Skipped {len(models) + len(repos) + len(articles) - len(items)} existing entries)")
 
         return items
 
@@ -204,9 +333,12 @@ class VectorEmbedder:
         logger.info(f"\n🧮 Generating embeddings for {len(items)} items...")
 
         # Combine name + description for embedding
+        # Note: For blog articles, description = full content (better semantic search)
+        # Note: For models/repos, description = short summary
         texts = []
         for item in items:
             # Format: "Name: <name>\nDescription: <description>"
+            # Sentence transformer will auto-truncate to token limit (~512 tokens)
             text = f"Name: {item['name']}\nDescription: {item['description']}"
             texts.append(text)
 
@@ -232,14 +364,56 @@ class VectorEmbedder:
         return items
 
     def upsert_to_vector_db(self, items: List[Dict]):
-        """Upsert items to vector database."""
+        """Upsert items to vector database (routes to appropriate table)."""
         if not items:
             logger.info("⏭️  No items to upsert")
             return
 
-        logger.info(f"\n⬆️  Upserting {len(items)} items to {self.vector_table}...")
+        # Split items by type
+        blog_items = [item for item in items if item["doc_type"] == "blog_article"]
+        other_items = [item for item in items if item["doc_type"] != "blog_article"]
 
-        # Prepare rows for vector DB (using dedicated columns)
+        # Upsert blogs to blog_docs
+        if blog_items:
+            self._upsert_blogs(blog_items)
+
+        # Upsert models/repos to ragnosis_docs
+        if other_items:
+            self._upsert_other(other_items)
+
+    def _upsert_blogs(self, items: List[Dict]):
+        """Upsert blog articles to blog_docs table (supports chunks)."""
+        logger.info(f"\n⬆️  Upserting {len(items)} blog items to {self.blog_vector_table}...")
+
+        rows = []
+        for item in items:
+            # Create preview text (title + first 300 chars)
+            description_preview = item["description"][:300] if item["description"] else ""
+            preview_text = f"{item['name']}: {description_preview}..."
+
+            row = {
+                "id": item["id"],
+                "parent_id": item.get("parent_id"),  # NULL for whole articles
+                "chunk_index": item.get("chunk_index", 0),
+                "name": item["name"],
+                "description": item.get("description", ""),  # Chunk or full content
+                "url": item["url"],
+                "source": item.get("rag_category"),  # langchain/llamaindex/etc
+                "published_at": item.get("published_at"),
+                "rag_topics": item.get("rag_topics", []),
+                "scrape_method": item.get("scrape_method"),
+                "text": preview_text,
+                "embedding": item["embedding"],
+            }
+            rows.append(row)
+
+        # Upload in batches
+        self._batch_upsert(self.blog_vector_table, rows)
+
+    def _upsert_other(self, items: List[Dict]):
+        """Upsert models/repos to ragnosis_docs table."""
+        logger.info(f"\n⬆️  Upserting {len(items)} models/repos to {self.vector_table}...")
+
         rows = []
         for item in items:
             # Create preview text (name + description snippet)
@@ -259,21 +433,25 @@ class VectorEmbedder:
             rows.append(row)
 
         # Upload in batches
+        self._batch_upsert(self.vector_table, rows)
+
+    def _batch_upsert(self, table_name: str, rows: List[Dict]):
+        """Helper to batch upsert rows to a table."""
         batch_size = 100
         for i in range(0, len(rows), batch_size):
             batch = rows[i : i + batch_size]
 
             try:
-                self.client.table(self.vector_table).upsert(batch).execute()
+                self.client.table(table_name).upsert(batch).execute()
 
                 if (i // batch_size + 1) % 5 == 0:
                     logger.info(f"  Uploaded {i + len(batch)}/{len(rows)} rows")
 
             except Exception as e:
-                logger.error(f"❌ Failed to upload batch {i // batch_size + 1}: {e}")
+                logger.error(f"❌ Failed to upload batch {i // batch_size + 1} to {table_name}: {e}")
                 # Continue with next batch
 
-        logger.info(f"✅ Successfully upserted {len(rows)} items to vector DB")
+        logger.info(f"✅ Successfully upserted {len(rows)} items to {table_name}")
 
     def run_embedding_pipeline(self, snapshot_date: str = None):
         """
@@ -301,10 +479,11 @@ class VectorEmbedder:
             logger.info(f"\n📂 STEP 1: Fetching data from SQL (date: {snapshot_date})...")
             models = self.fetch_models_from_sql(snapshot_date)
             repos = self.fetch_repos_from_sql(snapshot_date)
+            articles = self.fetch_articles_from_sql()  # Articles don't have snapshot dates
 
             # Step 3: Prepare data (filter out existing)
             logger.info("\n🔄 STEP 2: Filtering new entries...")
-            items = self.prepare_embedding_data(models, repos, existing_ids)
+            items = self.prepare_embedding_data(models, repos, articles, existing_ids)
 
             if not items:
                 logger.info("\n✅ No new items to embed (all entries already exist)")
@@ -324,9 +503,9 @@ class VectorEmbedder:
             logger.info("✅ VECTOR EMBEDDING PIPELINE COMPLETED SUCCESSFULLY")
             logger.info("=" * 60)
             logger.info(f"📊 Summary:")
-            logger.info(f"   - Processed {len(models)} models + {len(repos)} repos")
+            logger.info(f"   - Processed {len(models)} models + {len(repos)} repos + {len(articles)} articles")
             logger.info(f"   - Created {len(items_with_embeddings)} new embeddings")
-            logger.info(f"   - Skipped {len(models) + len(repos) - len(items_with_embeddings)} existing entries")
+            logger.info(f"   - Skipped {len(models) + len(repos) + len(articles) - len(items_with_embeddings)} existing entries")
             logger.info(f"   - Total in vector DB: {len(existing_ids) + len(items_with_embeddings)}")
             logger.info("=" * 60 + "\n")
 

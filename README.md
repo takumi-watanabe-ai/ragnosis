@@ -78,6 +78,9 @@ make fetch-data
 
 # Ingest into SQL tables
 make ingest
+
+# One-time: Scrape ALL blog articles from sitemaps (100s-1000s)
+make scrape-sitemap
 ```
 
 ### 5. Verify Data
@@ -100,14 +103,22 @@ make supabase-studio
 ragnosis/
 ├── src/
 │   ├── data_collection/        # Data fetchers and ingestion
+│   │   ├── content/            # Blog article scraping (NEW)
+│   │   │   ├── config/         # Site configs & filters
+│   │   │   ├── scrapers/       # Historical & RSS scrapers
+│   │   │   ├── parsers/        # Site-specific parsers
+│   │   │   └── blog_orchestrator.py
 │   │   ├── hf_fetcher.py       # HuggingFace models
 │   │   ├── github_fetcher.py   # GitHub repositories
 │   │   ├── trends_fetcher.py   # Google Trends
-│   │   └── ingest.py           # SQL ingestion pipeline
+│   │   ├── vector_embedder.py  # Embedding pipeline
+│   │   └── pipeline.py         # Complete data pipeline
 │   └── agent/                   # AI research assistant (coming soon)
 │       └── research_agent.py
 ├── supabase/
 │   └── migrations/              # Database schema
+├── .github/
+│   └── workflows/               # GitHub Actions (daily scraping)
 ├── docs/
 │   └── REQUIREMENTS.md          # Full specification
 ├── Makefile                     # Development commands
@@ -121,20 +132,21 @@ ragnosis/
 ### Common Commands
 
 ```bash
-# Start Supabase
-make supabase-start
+# Setup
+make setup              # Full local setup (Supabase + Ollama)
 
-# Fetch latest data
-make fetch-data
+# Data collection (local)
+make pipeline           # Fetch HF/GitHub/Trends + embed
+make scrape-sitemap     # One-time sitemap scrape (100s-1000s articles)
+make scrape-feeds       # Daily blog RSS (or use GitHub Actions)
 
-# Ingest to database
-make ingest
+# Embeddings
+make embed              # Create embeddings for new data only
 
-# Open Supabase Studio
-make supabase-studio
-
-# Reset database (⚠️ deletes all data)
-make supabase-reset
+# Development
+make chat               # Start chat interface
+make supabase-studio    # Open database UI
+make supabase-reset     # Reset database (⚠️ deletes all)
 ```
 
 ### Data Flow
@@ -158,11 +170,14 @@ Analytics Queries
 - [x] Ingestion pipeline
 - [ ] Verify 30 days of historical data
 
-### 🚧 Phase 2: Content Layer (Next)
+### 🚧 Phase 2: Content Layer (In Progress)
+- [x] Blog post aggregator (RSS feeds + historical)
+  - LangChain, LlamaIndex, Pinecone, Weaviate, HuggingFace blogs
+  - Historical scraping + daily RSS monitoring
+  - Auto-filtered for RAG relevance
+- [x] Vector embeddings for blog content
 - [ ] ArXiv paper scraper
-- [ ] Blog post aggregator (RSS feeds)
 - [ ] HackerNews discussion fetcher
-- [ ] Vector embeddings for semantic search
 
 ### 📋 Phase 3: AI Research Agent
 - [ ] LangChain agent orchestration
@@ -233,6 +248,32 @@ Data Sources → Daily Fetch → SQL Tables → Analytics Queries
 **Data Pipeline:**
 - **Language:** Python 3.13
 - **Automation:** GitHub Actions (daily cron)
+
+---
+
+## GitHub Actions Setup (Daily Automation)
+
+Three separate workflows run daily for efficient data collection with failure isolation.
+
+**Setup:**
+1. Go to your GitHub repo → Settings → Secrets and variables → Actions
+2. Add these secrets:
+   - `SUPABASE_URL`: Your production Supabase URL
+   - `SUPABASE_SERVICE_KEY`: Your Supabase service role key
+   - `HUGGINGFACE_API_KEY`: HuggingFace API token
+   - `GH_TOKEN`: GitHub personal access token
+
+**The workflows:**
+- **8:00 AM UTC**: Market data (HF models, GitHub repos, Trends) - ~2 min
+- **9:00 AM UTC**: Blog RSS feeds - ~30 sec
+- **10:00 AM UTC**: Embeddings (all sources, model loads ONCE) - ~4 min
+
+**Why separate?**
+- Failure isolation (blogs fail ≠ market data fails)
+- Performance (model loads once vs 3 times)
+- Easy debugging and retries
+
+See `.github/workflows/README.md` for details.
 
 ---
 

@@ -1,0 +1,49 @@
+name: Daily Blog Scrape (RSS Feeds)
+
+on:
+  schedule:
+    # Run at 9:00 AM UTC daily (after market data)
+    - cron: '0 9 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  scrape-blogs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Scrape RSS feeds
+        id: scrape
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "📡 Fetching RSS feeds from all sites..."
+          python -m src.data_collection.content.blog_orchestrator feeds
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.scrape.outcome }}" != "success" ]; then
+            echo "::error::❌ Blog scraping failed"
+            echo "::error::Some articles may be missed"
+            exit 1
+          else
+            echo "✅ Blog articles scraped successfully!"
+            echo "📊 Articles saved to blog_articles table"
+            echo "🔜 Embeddings will be created at 10:00 AM UTC"
+          fi
