@@ -39,46 +39,20 @@ Most RAG systems just do vector search and call it a day. This one actually thin
 
 ## How It Works
 
+**3-Step Architecture:**
+
 ```
-Your Query
-    ↓
-┌─────────────────────────────────────────────────────────┐
-│ 1. Query Analysis (Ollama qwen2.5:3b)                  │
-│    • What kind of question is this?                     │
-│    • What entities are mentioned? (models, frameworks)  │
-│    • Where should we look? (SQL, blog articles, both)   │
-└───────────────────────┬─────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│ 2. Hybrid Search                                        │
-│    • Vector: Semantic similarity across 4K+ blog docs   │
-│    • Keyword: BM25 ranking on PostgreSQL full-text      │
-│    • SQL: Direct metrics for specific models/repos      │
-└───────────────────────┬─────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│ 3. Reranking (Custom BM25 in TypeScript)               │
-│    • Score: How many query terms match?                 │
-│    • Boost: Title matches = 10x weight                  │
-│    • Penalty: Missing terms = score² drop               │
-└───────────────────────┬─────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│ 4. Data Enrichment                                      │
-│    • Merge SQL metadata (downloads, stars, likes)       │
-│    • Add RAG category tags                              │
-│    • Filter by quality threshold                        │
-└───────────────────────┬─────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│ 5. Answer Generation (Ollama qwen2.5:3b)               │
-│    • Use intent-specific prompt template                │
-│    • Cite sources with markdown links                   │
-│    • Format for readability                             │
-└─────────────────────────────────────────────────────────┘
-                        ↓
-                 Final Answer
+Query → Plan (LLM) → Execute (Parallel Search) → Synthesize (LLM) → Answer
 ```
+
+1. **Plan**: LLM analyzes query and routes to appropriate data sources
+2. **Execute**: Search blogs + models/repos in parallel, rerank with BM25, enrich top results
+3. **Synthesize**: LLM generates structured answer with citations
+
+**Key Features:**
+- Searches 3,858 blog chunks + 61 models/repos simultaneously
+- Cost-optimized: ~60% token reduction vs naive approach
+- Returns top 5 results with full metadata enrichment
 
 **The Stack:**
 - **Runtime**: Deno (Supabase Edge Functions)
@@ -189,22 +163,22 @@ Add these secrets in GitHub repo → Settings → Secrets:
 ## Roadmap
 
 **✅ Built:**
-- Advanced RAG pipeline with LLM query preprocessing
-- Hybrid search (vector + keyword)
-- Custom BM25 reranking
-- Intent-specific answer generation
-- Automated data collection (4K+ blog articles)
+- 3-step agentic RAG with query planning
+- Dual vector search (blogs + models/repos)
+- Post-rerank enrichment with SQL metadata
+- Cost-optimized token usage (~60% reduction)
+- Interactive Streamlit UI with example questions
+- Automated data collection (3,858 blog chunks)
 
 **🚧 Next:**
-- Cross-encoder neural reranking (replace custom BM25)
-- Multi-query expansion
+- Cross-encoder reranking
 - Semantic caching
 - ArXiv + HackerNews integration
 
 **📋 Future:**
-- Next.js frontend with chat UI
+- Next.js frontend
 - Analytics dashboard
-- RAGAS evaluation metrics
+- RAGAS evaluation framework
 
 ---
 

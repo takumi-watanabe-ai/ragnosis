@@ -116,48 +116,77 @@ def main():
     st.subheader("RAG Market Intelligence + Expert Troubleshooting")
     st.markdown("Ask about RAG models, frameworks, trends, or get expert help with implementation challenges")
 
+    # Initialize settings with defaults
+    show_sources = True
+    show_confidence = False
+    top_k = 5
+
     # Sidebar
     with st.sidebar:
-        st.header("About")
-        st.markdown("""
-        RAGnosis combines market intelligence with expert troubleshooting knowledge:
-        - **🤗 HuggingFace**: 76 RAG models with download metrics
-        - **💻 GitHub**: 46 RAG frameworks & tools
-        - **📈 Google Trends**: RAG adoption trends
-        - **📚 Blog Archive**: 4,018 expert articles (LangChain, LlamaIndex, Pinecone, Weaviate)
+        st.header("💡 Example Questions")
+        st.caption("Click any question to try it")
 
-        **Market Intelligence:**
-        - What are the top embedding models?
-        - Which RAG frameworks are most popular?
-        - Show me RAG trends over time
+        # Market Intelligence
+        st.markdown("**📊 Market Intelligence**")
+        example_questions_market = [
+            "What are the top embedding models?",
+            "Most popular RAG frameworks",
+            "Best reranking models",
+            "Top vector databases by popularity",
+            "RAG trends over time"
+        ]
 
-        **Expert Troubleshooting:**
-        - How to fix chunking errors in RAG?
-        - How to improve retrieval accuracy?
-        - Best practices for production RAG deployment
-        - Guide to choosing vector databases
-        """)
+        for q in example_questions_market:
+            if st.button(q, key=f"market_{q}", use_container_width=True):
+                st.session_state.clicked_question = q
 
         st.divider()
 
-        st.header("Settings")
-        show_sources = st.checkbox("Show sources", value=True)
-        show_confidence = st.checkbox("Show confidence scores", value=False)
-        top_k = st.slider("Number of sources to retrieve", 1, 10, 5)
+        # Implementation & Troubleshooting
+        st.markdown("**🛠️ Implementation Help**")
+        example_questions_impl = [
+            "How to fix chunking errors in RAG?",
+            "How to improve retrieval accuracy?",
+            "Guide to choosing vector databases",
+            "Best practices for RAG deployment",
+            "What are similar tools like RAGAS?",
+            "How to implement hybrid search?",
+            "Reranking vs embedding models"
+        ]
+
+        for q in example_questions_impl:
+            if st.button(q, key=f"impl_{q}", use_container_width=True):
+                st.session_state.clicked_question = q
 
         st.divider()
 
-        # Show connection status
+        # Comparison Queries
+        st.markdown("**⚖️ Comparisons**")
+        example_questions_compare = [
+            "LangChain vs LlamaIndex",
+            "Pinecone vs Weaviate vs Qdrant",
+            "OpenAI embeddings vs open source",
+            "RAG vs fine-tuning"
+        ]
+
+        for q in example_questions_compare:
+            if st.button(q, key=f"compare_{q}", use_container_width=True):
+                st.session_state.clicked_question = q
+
+        st.divider()
+
+        # Settings (collapsed)
+        with st.expander("⚙️ Settings"):
+            show_sources = st.checkbox("Show sources", value=True)
+            show_confidence = st.checkbox("Show confidence", value=False)
+            top_k = st.slider("Sources to retrieve", 1, 10, 5)
+
+        # Connection status (minimal)
         edge_function_url = os.getenv("EDGE_FUNCTION_URL", "Not configured")
         if "localhost" in edge_function_url:
-            st.success("🖥️ Local Edge Function")
+            st.caption("🖥️ Local")
         else:
-            st.info("☁️ Cloud Edge Function")
-
-        st.caption(f"Endpoint: {edge_function_url}")
-
-        st.markdown("Built with Supabase Edge Functions, pgvector, and Ollama")
-        st.markdown("[GitHub](https://github.com/yourusername/ragnosis)")
+            st.caption("☁️ Cloud")
 
     # Initialize client
     client = initialize_client()
@@ -165,6 +194,29 @@ def main():
     # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
+
+    # Handle clicked example questions
+    if "clicked_question" in st.session_state:
+        prompt = st.session_state.clicked_question
+        del st.session_state.clicked_question  # Clear after use
+
+        # Add to chat history and process
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Generate response
+        with st.spinner("Searching..."):
+            result = client.ask_question(prompt, top_k=top_k)
+
+        # Add assistant response
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": result["answer"],
+            "sources": result.get("sources", []),
+            "confidence": result.get("confidence", "unknown")
+        })
+
+        # Rerun to display the new messages
+        st.rerun()
 
     # Display chat history
     for message in st.session_state.messages:

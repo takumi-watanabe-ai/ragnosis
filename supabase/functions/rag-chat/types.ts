@@ -16,7 +16,7 @@ export type DataSourceType =
   | 'top_models_by_downloads'
   | 'top_repos_by_stars'
   | 'search_trends'
-  | 'vector_search_blogs'
+  | 'vector_search_unified'
 
 export interface DataSourceQuery {
   source: DataSourceType

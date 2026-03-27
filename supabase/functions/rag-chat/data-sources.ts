@@ -72,8 +72,8 @@ export async function executeDataSource(
     case 'search_trends':
       return await searchTrends(limit)
 
-    case 'vector_search_blogs':
-      return await vectorSearchBlogs(query.params?.query || '', limit)
+    case 'vector_search_unified':
+      return await vectorSearchUnified(query.params?.query || '', limit)
 
     default:
       console.error(`Unknown data source: ${query.source}`)
@@ -326,15 +326,61 @@ async function searchTrends(limit: number): Promise<SearchResult[]> {
 }
 
 /**
- * Vector search for blog articles
+ * Enrich HuggingFace model with full metadata
  */
-async function vectorSearchBlogs(
+async function enrichModel(modelName: string): Promise<Partial<SearchResult>> {
+  const { data, error } = await supabase
+    .from('hf_models')
+    .select('downloads, likes, ranking_position, author, rag_category')
+    .eq('model_name', modelName)
+    .order('snapshot_date', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error || !data) return {}
+
+  return {
+    downloads: data.downloads,
+    likes: data.likes,
+    ranking_position: data.ranking_position,
+    author: data.author,
+    rag_category: data.rag_category
+  }
+}
+
+/**
+ * Enrich GitHub repo with full metadata
+ */
+async function enrichRepo(repoName: string): Promise<Partial<SearchResult>> {
+  const { data, error } = await supabase
+    .from('github_repos')
+    .select('stars, forks, language, owner, rag_category')
+    .eq('repo_name', repoName)
+    .order('snapshot_date', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error || !data) return {}
+
+  return {
+    stars: data.stars,
+    forks: data.forks,
+    language: data.language,
+    owner: data.owner,
+    rag_category: data.rag_category
+  }
+}
+
+/**
+ * Unified vector search (searches both ragnosis_docs and blog_docs)
+ */
+async function vectorSearchUnified(
   searchQuery: string,
   limit: number
 ): Promise<SearchResult[]> {
-  console.log(`🔍 Vector search blogs: "${searchQuery}"`)
+  console.log(`🔍 Unified vector search: "${searchQuery}"`)
 
-  // Generate embedding using Supabase AI Session
+  // Generate embedding once
   let embedding: number[]
   try {
     if (!aiSession) {
@@ -351,37 +397,55 @@ async function vectorSearchBlogs(
     return []
   }
 
-  // Use match_blog_docs (vector search only)
-  const { data, error } = await supabase.rpc('match_blog_docs', {
-    query_embedding: embedding,
-    match_count: limit * 2,
-    filter_rag_topic: null,
-    filter_source: null
-  })
+  // Search both tables in parallel (configurable allocation)
+  const [modelsReposData, blogsData] = await Promise.all([
+    supabase.rpc('match_documents', {
+      query_embedding: embedding,
+      match_count: config.search.modelRepoCandidates,
+      filter_doc_type: null,
+      filter_rag_category: null
+    }),
+    supabase.rpc('match_blog_docs', {
+      query_embedding: embedding,
+      match_count: config.search.blogCandidates,
+      filter_rag_topic: null,
+      filter_source: null
+    })
+  ])
 
+  // Combine results from both tables
+  const modelsReposResults = modelsReposData.data || []
+  const blogsResults = blogsData.data || []
 
-  if (error) {
-    console.error('❌ Blog search failed:', JSON.stringify(error, null, 2))
-    return []
-  }
+  console.log(`📊 Found ${modelsReposResults.length} models/repos, ${blogsResults.length} blogs`)
 
-  if (!data) {
-    return []
-  }
+  // Map models/repos results (from ragnosis_docs)
+  const modelsReposMapped: SearchResult[] = modelsReposResults.map((d: any) => ({
+    id: d.id,
+    name: d.name || '',
+    description: d.description || d.text?.substring(0, config.search.context.descriptionMax) || '',
+    url: d.url,
+    doc_type: d.doc_type as 'hf_model' | 'github_repo',
+    similarity: d.similarity || 0,
+    rerank_score: d.similarity || 0,
+    rag_category: d.rag_category,
+    content: d.text
+  }))
 
-  // Handle wrapped response
-  const results_array = Array.isArray(data) ? data : (data.results || [])
-
-  let results: SearchResult[] = results_array.map((d: any) => ({
+  // Map blog results (from blog_docs)
+  const blogsMapped: SearchResult[] = blogsResults.map((d: any) => ({
     id: d.id,
     name: d.title || d.name || '',
-    description: d.content?.substring(0, 200) || d.description || '',
+    description: d.content?.substring(0, config.search.context.descriptionMax) || d.description || '',
     url: d.url,
     doc_type: 'blog_article' as const,
-    similarity: d.similarity || d.rank_score || 0,
-    rerank_score: d.similarity || d.rank_score || 0,
-    content: d.content || d.description
+    similarity: d.similarity || 0,
+    rerank_score: d.similarity || 0,
+    content: d.content || d.text
   }))
+
+  // Combine all results
+  let results: SearchResult[] = [...modelsReposMapped, ...blogsMapped]
 
   // Deduplicate by URL (keep highest similarity)
   const urlMap = new Map<string, SearchResult>()
@@ -392,12 +456,31 @@ async function vectorSearchBlogs(
   })
   results = Array.from(urlMap.values()).sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
 
-  // Rerank with BM25 keyword matching
+  // Rerank with BM25 keyword matching to get top candidates
   results = rerankResults(searchQuery, results)
 
-  console.log(`✅ Vector search: ${results.length} results after dedup+rerank`)
+  console.log(`✅ Unified search: ${results.length} results after dedup+rerank`)
 
-  // TODO: Enrich repos/models with SQL metadata if found
+  // Enrich top results based on doc_type (only enrich what we'll return)
+  const topResults = results.slice(0, limit)
+  const enrichedResults = await Promise.all(
+    topResults.map(async (result) => {
+      if (result.doc_type === 'hf_model') {
+        const enriched = await enrichModel(result.name)
+        console.log(`📊 Enriched model: ${result.name}`)
+        return { ...result, ...enriched }
+      }
+      if (result.doc_type === 'github_repo') {
+        const enriched = await enrichRepo(result.name)
+        console.log(`📊 Enriched repo: ${result.name}`)
+        return { ...result, ...enriched }
+      }
+      // blog_article and google_trend don't need enrichment
+      return result
+    })
+  )
 
-  return results.slice(0, limit)
+  console.log(`✅ Enrichment complete`)
+
+  return enrichedResults
 }

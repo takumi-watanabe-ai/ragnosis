@@ -12,13 +12,37 @@ export const config = {
     dimensions: CONFIG.embedding.dimensions,
   },
 
-  // LLM configuration
+  // LLM configuration (cost-optimized)
   llm: {
     url: Deno.env.get('OLLAMA_URL') || 'http://ragnosis_ollama:11434',
     model: Deno.env.get('OLLAMA_MODEL') || 'qwen2.5:3b-instruct',
-    temperature: 0.1,  // Very low to reduce hallucination
-    maxTokens: 1024,  // 700-800 words max - concise but complete
-    stopSequences: [],
+
+    // Query planning (minimal tokens for JSON output)
+    planning: {
+      maxTokens: 150,      // ~100 tokens needed for JSON
+      temperature: 0.3,
+    },
+
+    // Answer generation (optimized for cost and completeness)
+    answer: {
+      maxTokens: 500,      // ~350 words, complete but concise
+      targetWords: 300,    // Explicit guidance for LLM
+      temperature: 0.3,
+    },
+  },
+
+  // Search and context configuration
+  search: {
+    // Candidate allocation for vector search
+    blogCandidates: 10,           // From blog_docs (larger corpus)
+    modelRepoCandidates: 5,       // From ragnosis_docs (models + repos)
+
+    // Context sizing (token-optimized)
+    context: {
+      primaryExcerpt: 200,     // Top 2 sources get full context
+      secondaryExcerpt: 100,   // Sources 3-5 get minimal context
+      descriptionMax: 150,     // Model/repo descriptions
+    },
   },
 
   // Database configuration

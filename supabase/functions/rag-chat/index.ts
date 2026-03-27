@@ -58,10 +58,11 @@ serve(async (req) => {
       plan.data_sources.map(ds => executeDataSource(ds))
     )
 
-    // Flatten and deduplicate results
-    const results: SearchResult[] = allResults.flat()
+    // Flatten and limit to top_k (when multiple sources are used)
+    const allFlattened = allResults.flat()
+    const results: SearchResult[] = allFlattened.slice(0, top_k)
 
-    console.log(`✅ Retrieved ${results.length} total results`)
+    console.log(`✅ Retrieved ${allFlattened.length} results, returning top ${results.length}`)
 
     if (results.length === 0) {
       return new Response(

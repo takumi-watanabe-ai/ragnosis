@@ -11,12 +11,6 @@ setup: ## Setup local development (Supabase + Ollama + Models)
 	@echo "1️⃣  Starting Supabase..."
 	supabase start
 	@echo ""
-	@echo "2️⃣  Applying migrations..."
-	supabase db reset
-	@echo ""
-	@echo "3️⃣  Deploying schema functions..."
-	./scripts/deploy-schema.sh local
-	@echo ""
 	@echo "4️⃣  Starting Ollama..."
 	docker compose up -d
 	@sleep 3

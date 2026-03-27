@@ -21,8 +21,8 @@ export async function createQueryPlan(query: string, top_k: number = 5): Promise
         prompt,
         stream: false,
         options: {
-          temperature: 0.3,
-          num_predict: 500
+          temperature: config.llm.planning.temperature,
+          num_predict: config.llm.planning.maxTokens
         }
       })
     })
@@ -47,7 +47,7 @@ export async function createQueryPlan(query: string, top_k: number = 5): Promise
       is_valid: true,
       reason: 'Failed to parse query, using fallback',
       data_sources: [{
-        source: 'vector_search_blogs',
+        source: 'vector_search_unified',
         params: { query, limit: top_k }
       }]
     }
@@ -67,7 +67,7 @@ OUTPUT VALID JSON ONLY:
   "reason": "brief explanation",
   "data_sources": [
     {
-      "source": "keyword_search_models|keyword_search_repos|top_models_by_downloads|top_repos_by_stars|search_trends|vector_search_blogs",
+      "source": "keyword_search_models|keyword_search_repos|top_models_by_downloads|top_repos_by_stars|search_trends|vector_search_unified",
       "params": {
         "query": "search text",
         "model_names": ["specific", "models"],
@@ -81,22 +81,23 @@ OUTPUT VALID JSON ONLY:
   ]
 }
 
-ONLY answer RAG/ML/AI questions. Mark is_valid=false for off-topic (sports, weather, etc.).
+VALIDATION: Mark is_valid=false ONLY for clearly off-topic queries (sports, weather, cooking, entertainment).
+If the query mentions tools, frameworks, models, or concepts you don't recognize, still mark is_valid=true.
+The search will find the answer - your job is just to route it correctly.
 
 ROUTING LOGIC:
-- HOW/WHAT/WHY/EXPLAIN → vector_search_blogs
-- TREND DATA (time-series) → search_trends
+- Questions about tools/concepts (even unknown ones) → vector_search_unified
+- HOW/WHAT/WHY/EXPLAIN/SIMILAR → vector_search_unified
 - TOP/POPULAR models/embeddings → top_models_by_downloads
 - TOP/POPULAR frameworks/tools/repos → top_repos_by_stars
-- Specific names (LangChain, Pinecone) → keyword_search_*
+- TREND DATA (time-series) → search_trends
 
 Examples:
-"What is X?" → blogs
+"What is X?" or "Similar to X?" → vector_search_unified (even if X is unknown)
 "Top frameworks" → top_repos_by_stars
 "Top models" → top_models_by_downloads
-"Trend of X" → search_trends
 
-CRITICAL: Don't hallucinate params. Only set params you understand (query, limit, categories).
+CRITICAL: Don't hallucinate params. Only set params you actually need (query, limit).
 
 RESPOND WITH VALID JSON ONLY.`
 }
