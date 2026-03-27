@@ -1,4 +1,4 @@
-.PHONY: help setup chat scrape-feeds scrape-sitemap scrape-all embed pipeline env-prod env-local env-status
+.PHONY: help setup chat scrape-sitemap embed pipeline env-prod env-local env-status
 
 help: ## Show available commands
 	@echo "RAGnosis - Simple Development Commands"
@@ -40,14 +40,6 @@ chat: ## Run chat interface (starts edge functions + UI)
 	@echo "Starting Streamlit UI..."
 	@streamlit run src/agent/research_agent.py; kill `cat .edge-function.pid` 2>/dev/null || true; rm -f .edge-function.pid
 
-scrape-feeds: ## Scrape RSS feeds for new articles (daily)
-	@echo "📡 Scraping RSS feeds..."
-	@echo ""
-	python -m src.data_collection.content.blog_orchestrator feeds
-	@echo ""
-	@echo "✅ RSS feed scraping complete!"
-	@echo "💡 Next: Run 'make embed' to create embeddings"
-
 scrape-sitemap: ## Scrape from sitemaps (historical backfill - RECOMMENDED)
 	@echo "🗺️  Scraping blog articles from sitemaps..."
 	@echo "💡 This fetches ALL articles (100s-1000s vs ~15 from RSS)"
@@ -56,13 +48,6 @@ scrape-sitemap: ## Scrape from sitemaps (historical backfill - RECOMMENDED)
 	@echo ""
 	@echo "✅ Sitemap scraping complete!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"
-
-scrape-all: ## Scrape all blogs (sitemap + feeds)
-	@echo "🔄 Running full blog scraping pipeline..."
-	@echo ""
-	@make scrape-sitemap
-	@echo ""
-	@make scrape-feeds
 
 embed: ## Create vector embeddings for all new data
 	@echo "🧮 Creating vector embeddings..."

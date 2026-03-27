@@ -2,46 +2,90 @@
 
 > **AI-powered market intelligence for RAG technology decisions**
 
-**Status:** 🚀 Advanced RAG System - Production Ready
+Making smart decisions about RAG technology? You need both the numbers (what's popular) and the know-how (what actually works). RAGnosis gives you both: quantitative metrics from HuggingFace and GitHub, plus expert knowledge from 4,000+ blog articles from teams who've built RAG systems in production.
+
+**Status:** 🚀 Production Ready
 
 ---
 
-## What It Does
+## What Makes It Smart
 
-Market intelligence platform for VCs, Product Managers, and Founders making RAG technology decisions. Combines quantitative metrics (downloads, stars) with expert knowledge from 4,018+ blog articles.
+Most RAG systems just do vector search and call it a day. This one actually thinks about your question first:
 
-## Key Features
+**Smart Query Understanding** - Before searching anything, an LLM figures out what you're really asking:
+- Are you looking for market data? ("What are the top embedding models?")
+- Need implementation help? ("How do I fix retrieval accuracy?")
+- Comparing options? ("LangChain vs LlamaIndex")
+- The system then routes to the right data source automatically
 
-🤖 **LLM Query Preprocessing** - Ollama (qwen2.5:3b) analyzes queries to:
-- Classify intent (market intelligence, implementation, troubleshooting, comparison)
-- Extract entities (frameworks, models, vector DBs, companies)
-- Route to optimal data source (SQL vs vector search)
-- Enhance queries with context
+**Hybrid Search** - Combines two search approaches because sometimes you need both:
+- Vector search finds conceptually similar content ("retrieval quality" matches "improving accuracy")
+- Keyword search finds exact matches ("Supabase/gte-small" finds that specific model)
+- Searches across blog articles, HuggingFace models, and GitHub repos simultaneously
 
-🔍 **Hybrid Search** - Best of both worlds:
-- **Vector**: pgvector cosine similarity (384-dim embeddings)
-- **Keyword**: PostgreSQL full-text search (BM25-like `ts_rank_cd`)
-- Searches across blogs, HuggingFace models, GitHub repos
+**Smart Reranking** - Not all "relevant" results are actually relevant:
+- Custom BM25 algorithm scores results based on how many query terms they match
+- Heavily boosts results where terms appear in the title (10x multiplier)
+- Penalizes results missing important query terms (squared penalty)
+- Result: "Supabase/gte-small" ranks higher than generic embedding articles
 
-📊 **BM25 Reranking** - Custom algorithm with:
-- Term frequency scoring + stop word filtering
-- 10x title match boosting
-- Completeness penalty (missing terms = exponential score drop)
+**Answer Generation** - Different questions need different answer styles:
+- Market questions get ranked lists with metrics
+- Implementation questions get step-by-step guides
+- Troubleshooting gets problem diagnosis + solutions
+- Comparisons get side-by-side analysis
 
-🔧 **Data Enrichment** - Merges vector results with SQL metrics:
-- Downloads, stars, likes, forks
-- RAG category classification
+---
 
-🎯 **Intent-Specific Answers** - Templates optimized per query type:
-- Market intelligence: Lists with metrics
-- Implementation: Actionable steps
-- Troubleshooting: Problem → Solution
-- Comparison: Side-by-side analysis
+## How It Works
 
-📈 **Time-Series Analytics** - SQL-powered trends:
-- HuggingFace model downloads over time
-- GitHub repository growth
-- Google search interest
+```
+Your Query
+    ↓
+┌─────────────────────────────────────────────────────────┐
+│ 1. Query Analysis (Ollama qwen2.5:3b)                  │
+│    • What kind of question is this?                     │
+│    • What entities are mentioned? (models, frameworks)  │
+│    • Where should we look? (SQL, blog articles, both)   │
+└───────────────────────┬─────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 2. Hybrid Search                                        │
+│    • Vector: Semantic similarity across 4K+ blog docs   │
+│    • Keyword: BM25 ranking on PostgreSQL full-text      │
+│    • SQL: Direct metrics for specific models/repos      │
+└───────────────────────┬─────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 3. Reranking (Custom BM25 in TypeScript)               │
+│    • Score: How many query terms match?                 │
+│    • Boost: Title matches = 10x weight                  │
+│    • Penalty: Missing terms = score² drop               │
+└───────────────────────┬─────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 4. Data Enrichment                                      │
+│    • Merge SQL metadata (downloads, stars, likes)       │
+│    • Add RAG category tags                              │
+│    • Filter by quality threshold                        │
+└───────────────────────┬─────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 5. Answer Generation (Ollama qwen2.5:3b)               │
+│    • Use intent-specific prompt template                │
+│    • Cite sources with markdown links                   │
+│    • Format for readability                             │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+                 Final Answer
+```
+
+**The Stack:**
+- **Runtime**: Deno (Supabase Edge Functions)
+- **Database**: PostgreSQL with pgvector extension + GIN full-text indexes
+- **LLM**: Ollama qwen2.5:3b (runs locally for query analysis & answer generation)
+- **Embeddings**: Supabase.ai.Session using gte-small (384 dimensions)
+- **Data Pipeline**: Python scripts + GitHub Actions (automated daily/weekly)
 
 ---
 
@@ -55,7 +99,7 @@ brew install supabase/tap/supabase
 
 # Install Python dependencies
 python3 -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -71,9 +115,6 @@ supabase start  # Copy the API URL and keys!
 ```bash
 # Apply schema
 supabase db reset
-
-# Or manually in Studio (http://localhost:54323)
-# Run: supabase/migrations/20260324_initial_schema.sql
 ```
 
 ### 3. Configure Environment
@@ -87,12 +128,9 @@ cp .env.example .env
 
 ```bash
 # Fetch market data (HuggingFace, GitHub, Google Trends)
-make fetch-data
+make pipeline
 
-# Ingest into SQL tables
-make ingest
-
-# One-time: Scrape ALL blog articles from sitemaps (100s-1000s)
+# One-time: Scrape ALL blog articles from sitemaps
 make scrape-sitemap
 ```
 
@@ -103,127 +141,78 @@ make scrape-sitemap
 make supabase-studio
 
 # Check tables:
-# - hf_models (should have ~400 rows)
-# - github_repos (should have ~400 rows)
-# - google_trends (should have ~30 rows)
+# - hf_models (~400 rows)
+# - github_repos (~400 rows)
+# - blog_articles (~4,000 rows)
 ```
 
 ---
 
-## Project Structure
-
-```
-ragnosis/
-├── src/
-│   ├── data_collection/        # Data fetchers and ingestion
-│   │   ├── content/            # Blog article scraping (NEW)
-│   │   │   ├── config/         # Site configs & filters
-│   │   │   ├── scrapers/       # Historical & RSS scrapers
-│   │   │   ├── parsers/        # Site-specific parsers
-│   │   │   └── blog_orchestrator.py
-│   │   ├── hf_fetcher.py       # HuggingFace models
-│   │   ├── github_fetcher.py   # GitHub repositories
-│   │   ├── trends_fetcher.py   # Google Trends
-│   │   ├── vector_embedder.py  # Embedding pipeline
-│   │   └── pipeline.py         # Complete data pipeline
-│   └── agent/                   # AI research assistant (coming soon)
-│       └── research_agent.py
-├── supabase/
-│   └── migrations/              # Database schema
-├── .github/
-│   └── workflows/               # GitHub Actions (daily scraping)
-├── docs/
-│   └── REQUIREMENTS.md          # Full specification
-├── Makefile                     # Development commands
-└── README.md
-```
-
----
-
-## Development
-
-### Common Commands
+## Development Commands
 
 ```bash
 # Setup
 make setup              # Full local setup (Supabase + Ollama)
 
-# Data collection (local)
-make pipeline           # Fetch HF/GitHub/Trends + embed
-make scrape-sitemap     # One-time sitemap scrape (100s-1000s articles)
-make scrape-feeds       # Daily blog RSS (or use GitHub Actions)
-
-# Embeddings
-make embed              # Create embeddings for new data only
+# Data collection
+make pipeline           # Fetch HF/GitHub/Trends data
+make scrape-sitemap     # Comprehensive blog scraping
+make embed              # Create embeddings for new data
 
 # Development
 make chat               # Start chat interface
 make supabase-studio    # Open database UI
-make supabase-reset     # Reset database (⚠️ deletes all)
 ```
 
-### Data Flow
+---
 
-```
-Daily Cron (GitHub Actions)
-  ├─ fetch-data → data/*.json
-  └─ ingest → Supabase SQL tables
+## Automated Data Collection
 
-Analytics Queries
-  └─ Direct SQL (Supabase client or Studio)
-```
+The system updates automatically via GitHub Actions:
+
+**Daily:**
+- 8:00 AM UTC - Market data (HuggingFace models, GitHub repos, Google Trends)
+- 10:00 AM UTC - Vector embeddings (creates embeddings for any new data)
+
+**Weekly:**
+- Sunday 2:00 AM UTC - Blog articles (comprehensive sitemap scraping)
+
+**Setup:**
+Add these secrets in GitHub repo → Settings → Secrets:
+- `SUPABASE_URL` - Your production Supabase URL
+- `SUPABASE_SERVICE_KEY` - Service role key
+- `HUGGINGFACE_API_KEY` - HuggingFace API token
+- `GH_TOKEN` - GitHub personal access token
 
 ---
 
 ## Roadmap
 
-**✅ Completed:**
-- Analytics foundation (SQL time-series, data fetchers)
-- Content layer (4,018 blog articles, embeddings, pgvector)
-- Advanced RAG system:
-  - LLM query preprocessing (intent, entities, routing)
-  - Hybrid search (vector + keyword)
-  - BM25 reranking (TypeScript)
-  - Data enrichment (SQL metrics merge)
-  - Intent-specific answer generation
+**✅ Built:**
+- Advanced RAG pipeline with LLM query preprocessing
+- Hybrid search (vector + keyword)
+- Custom BM25 reranking
+- Intent-specific answer generation
+- Automated data collection (4K+ blog articles)
 
 **🚧 Next:**
-- Cross-encoder neural reranking
+- Cross-encoder neural reranking (replace custom BM25)
 - Multi-query expansion
 - Semantic caching
 - ArXiv + HackerNews integration
 
 **📋 Future:**
-- Next.js frontend + chat UI
+- Next.js frontend with chat UI
 - Analytics dashboard
-- RAGAS evaluation
-
----
-
-## Architecture
-
-```
-Query → LLM Preprocessing → Hybrid Search → BM25 Reranking → Data Enrichment → Answer Generation
-         (qwen2.5:3b)        (Vector+Keyword)  (TypeScript)    (SQL merge)      (qwen2.5:3b)
-              ↓                     ↓                ↓               ↓                ↓
-         Intent/Entities      pgvector+BM25      TF scoring     +Downloads       Templated
-         Smart routing        across 4K docs     +Title boost   +Stars/Likes     by intent
-```
-
-**Stack:**
-- **Edge Function**: Deno (Supabase)
-- **Database**: PostgreSQL + pgvector + GIN indexes
-- **LLM**: Ollama qwen2.5:3b (query analysis + answer generation)
-- **Embeddings**: Supabase.ai.Session (gte-small, 384-dim)
-- **Data Pipeline**: Python 3.13 → GitHub Actions (daily)
+- RAGAS evaluation metrics
 
 ---
 
 ## Documentation
 
-- [Example Queries](docs/example_queries.md) - Query patterns & testing
+- [Example Queries](docs/example_queries.md) - Query patterns & testing scenarios
 - [Database Schema](supabase/migrations/) - PostgreSQL + pgvector design
-- [Edge Function](supabase/functions/rag-chat/) - RAG implementation
+- [Edge Function](supabase/functions/rag-chat/) - RAG implementation details
 
 ---
 
@@ -239,39 +228,6 @@ Query → LLM Preprocessing → Hybrid Search → BM25 Reranking → Data Enrich
 | **Keyword Search** | PostgreSQL full-text (ts_rank_cd) |
 | **Reranking** | Custom BM25 (TypeScript) |
 | **Data Pipeline** | Python 3.13 + GitHub Actions |
-| **Frontend** | Next.js (planned) |
-
----
-
-## GitHub Actions Setup (Daily Automation)
-
-Three separate workflows run daily for efficient data collection with failure isolation.
-
-**Setup:**
-1. Go to your GitHub repo → Settings → Secrets and variables → Actions
-2. Add these secrets:
-   - `SUPABASE_URL`: Your production Supabase URL
-   - `SUPABASE_SERVICE_KEY`: Your Supabase service role key
-   - `HUGGINGFACE_API_KEY`: HuggingFace API token
-   - `GH_TOKEN`: GitHub personal access token
-
-**The workflows:**
-- **8:00 AM UTC**: Market data (HF models, GitHub repos, Trends) - ~2 min
-- **9:00 AM UTC**: Blog RSS feeds - ~30 sec
-- **10:00 AM UTC**: Embeddings (all sources, model loads ONCE) - ~4 min
-
-**Why separate?**
-- Failure isolation (blogs fail ≠ market data fails)
-- Performance (model loads once vs 3 times)
-- Easy debugging and retries
-
-See `.github/workflows/README.md` for details.
-
----
-
-## Contributing
-
-This is a portfolio/demonstration project. Not accepting contributions at this time.
 
 ---
 
@@ -281,4 +237,4 @@ MIT
 
 ---
 
-**Built to showcase:** RAG systems, Agentic AI, SQL analytics, Production architecture
+**Built to showcase:** Production RAG systems, LLM-powered query understanding, Hybrid search architectures, Automated data pipelines

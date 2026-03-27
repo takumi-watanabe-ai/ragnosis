@@ -1,5 +1,5 @@
 """
-Blog scraping orchestrator - manages historical and RSS scraping workflows.
+Blog scraping orchestrator - manages sitemap scraping workflows.
 """
 
 import logging
@@ -10,7 +10,7 @@ from typing import List, Set
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-from .scrapers import FeedScraper, SitemapScraper, Article
+from .scrapers import SitemapScraper, Article
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,8 +36,7 @@ class BlogOrchestrator:
         # Get existing URLs for deduplication
         existing_urls = self.get_existing_urls()
 
-        # Initialize scrapers
-        self.feed_scraper = FeedScraper(existing_urls=existing_urls)
+        # Initialize scraper
         self.sitemap_scraper = SitemapScraper(existing_urls=existing_urls)
 
     def get_existing_urls(self) -> Set[str]:
@@ -102,63 +101,6 @@ class BlogOrchestrator:
 
         logger.info(f"✅ Successfully inserted {inserted_count} articles")
 
-    def scrape_feeds(self, site_filter: str = None, max_articles: int = 20):
-        """
-        Run RSS feed scraping (fetch recent articles only).
-
-        Args:
-            site_filter: Optional site ID to scrape only that site
-            max_articles: Maximum recent articles per site (default 20)
-        """
-        logger.info("\n" + "=" * 60)
-        logger.info("📡 RSS FEED SCRAPING (RECENT ARTICLES)")
-        logger.info("=" * 60 + "\n")
-
-        all_articles = []
-
-        # Filter and sort sites by priority
-        sites = [
-            (name, config)
-            for name, config in self.sites_config.items()
-            if config.get("enabled", True)
-            and (site_filter is None or name == site_filter)
-        ]
-        sites.sort(key=lambda x: x[1].get("priority", 999))
-
-        for site_name, site_config in sites:
-            logger.info(f"\n{'='*60}")
-            logger.info(f"📡 Feed: {site_config['name']}")
-            logger.info(f"{'='*60}")
-
-            try:
-                # max_articles limits to recent entries only
-                articles = self.feed_scraper.scrape_site(
-                    site_config,
-                    max_articles=max_articles,
-                    scrape_method="rss"
-                )
-                all_articles.extend(articles)
-
-                logger.info(f"✅ Scraped {len(articles)} articles from {site_name} feed")
-
-            except Exception as e:
-                logger.error(f"❌ Failed to scrape {site_name} feed: {e}")
-                continue
-
-        # Insert all articles
-        logger.info(f"\n{'='*60}")
-        logger.info("💾 STORING ARTICLES")
-        logger.info(f"{'='*60}")
-
-        self.insert_articles(all_articles)
-
-        # Summary
-        logger.info("\n" + "=" * 60)
-        logger.info("✅ RSS FEED SCRAPING COMPLETE")
-        logger.info("=" * 60)
-        logger.info(f"📊 Total articles scraped: {len(all_articles)}")
-        logger.info("=" * 60 + "\n")
-
     def scrape_sitemaps(self, site_filter: str = None, max_articles: int = None):
         """
         Run sitemap scraping (fetch ALL historical articles).
@@ -168,7 +110,7 @@ class BlogOrchestrator:
             max_articles: Optional limit per site (None = all, for testing use ~50)
         """
         logger.info("\n" + "=" * 60)
-        logger.info("🗺️  SITEMAP SCRAPING (HISTORICAL BACKFILL)")
+        logger.info("🗺️  SITEMAP SCRAPING (COMPREHENSIVE)")
         logger.info("=" * 60 + "\n")
 
         total_articles = 0
@@ -218,25 +160,8 @@ class BlogOrchestrator:
         logger.info("=" * 60 + "\n")
 
 
-def main_feeds():
-    """Entry point for RSS feed scraping."""
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-
-    if not supabase_url or not supabase_key:
-        logger.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in .env")
-        return
-
-    orchestrator = BlogOrchestrator(supabase_url, supabase_key)
-
-    # Get optional site filter from env
-    site_filter = os.getenv("SITE_FILTER")
-
-    orchestrator.scrape_feeds(site_filter=site_filter)
-
-
-def main_sitemaps():
-    """Entry point for sitemap scraping (historical backfill)."""
+def main():
+    """Entry point for sitemap scraping."""
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 
@@ -257,10 +182,4 @@ def main_sitemaps():
 
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] == "feeds":
-        main_feeds()
-    else:
-        # Default: sitemap scraping (historical backfill)
-        main_sitemaps()
+    main()

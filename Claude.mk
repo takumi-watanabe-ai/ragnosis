@@ -1,10 +1,22 @@
 # Claude.mk - Custom development tasks
+#
+# ARCHITECTURE NOTES:
+# - Edge function runs LOCALLY (via "make chat")
+# - Uses LOCAL LLM (Ollama) - see llm.ts
+# - Connects to REMOTE Supabase database (cloud)
+# - Deploy schema: Copy-paste supabase/schema/*.sql into Supabase SQL Editor
+# - Smart search: Now uses LLM-based query preprocessing (Ollama)
 
 include .env
 export
 
-claude_sql: ## Execute SQL query (Usage: make claude_sql SQL="SELECT * FROM pg_tables")
-	@python -c "import os; from supabase import create_client; \
-	sb = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY')); \
-	result = sb.rpc('exec_sql', {'query': '$(SQL)'}).execute(); \
-	print(result.data if hasattr(result, 'data') else result)"
+test: ## Test edge function (Usage: make test Q="your query here")
+	@curl -X POST http://localhost:54321/functions/v1/rag-chat \
+		-H "Content-Type: application/json" \
+		-d '{"query": "$(Q)", "top_k": 5}' | jq
+
+db: ## Query remote database (Usage: make db Q="supabase" to search models)
+	@curl -s -X POST "$(SUPABASE_URL)/rest/v1/rpc/keyword_search_models" \
+		-H "apikey: $(SUPABASE_SERVICE_KEY)" \
+		-H "Content-Type: application/json" \
+		-d '{"search_query": "$(Q)", "query_limit": 5}' | jq

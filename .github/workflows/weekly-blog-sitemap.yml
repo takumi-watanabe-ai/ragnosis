@@ -1,9 +1,9 @@
-name: Daily Blog Scrape (RSS Feeds)
+name: Weekly Blog Sitemap Scrape
 
 on:
   schedule:
-    # Run at 9:00 AM UTC daily (after market data)
-    - cron: '0 9 * * *'
+    # Run every Sunday at 2:00 AM UTC
+    - cron: '0 2 * * 0'
 
   workflow_dispatch:
 
@@ -26,24 +26,24 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Scrape RSS feeds
+      - name: Scrape blog sitemaps
         id: scrape
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          echo "📡 Fetching RSS feeds from all sites..."
-          python -m src.data_collection.content.blog_orchestrator feeds
+          echo "🗺️  Scraping blog sitemaps (comprehensive scrape)..."
+          python -m src.data_collection.content.blog_orchestrator
 
       - name: Summary
         if: always()
         run: |
           if [ "${{ steps.scrape.outcome }}" != "success" ]; then
-            echo "::error::❌ Blog scraping failed"
+            echo "::error::❌ Blog sitemap scraping failed"
             echo "::error::Some articles may be missed"
             exit 1
           else
-            echo "✅ Blog articles scraped successfully!"
+            echo "✅ Blog articles scraped successfully from sitemaps!"
             echo "📊 Articles saved to blog_articles table"
-            echo "🔜 Embeddings will be created at 10:00 AM UTC"
+            echo "🔜 Embeddings will be created at 10:00 AM UTC daily"
           fi
