@@ -1,48 +1,21 @@
 /**
- * RAGnosis Query API - With LLM-Based Query Analysis
+ * RAGnosis Query API - Agentic 2-Step Architecture
  *
- * Uses Ollama (qwen2.5:3b) for intelligent query preprocessing
- * Inspired by finance-agent's best practices
+ * Step 1: Plan (query-planner) - Analyze + decide data sources
+ * Step 2: Execute (data-sources) - Fetch data in parallel
+ * Step 3: Synthesize (answer-generator) - Generate answer
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-import { smartSearch } from './db.ts'
-import { generateAnswer } from './llm.ts'
 import { config } from './config.ts'
-import { analyzeQuery, getRoutingExplanation } from './query-analyzer.ts'
+import { createQueryPlan } from './query-planner.ts'
+import { executeDataSource } from './data-sources.ts'
+import { generateAnswer } from './answer-generator.ts'
+import type { SearchResult } from './types.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': config.cors.allowOrigin,
   'Access-Control-Allow-Headers': config.cors.allowHeaders,
-}
-
-/**
- * Format market intelligence results directly (no LLM to prevent hallucination)
- */
-function formatMarketIntelligence(query: string, results: any[]): string {
-  const isModelQuery = results[0]?.doc_type === 'hf_model'
-
-  let answer = ''
-
-  results.forEach((item, i) => {
-    const num = i + 1
-    answer += `\n${num}. **[${item.name}](${item.url})**\n`
-
-    if (isModelQuery) {
-      if (item.downloads) answer += `   - Downloads: ${item.downloads.toLocaleString()}\n`
-      if (item.likes) answer += `   - Likes: ${item.likes.toLocaleString()}\n`
-      if (item.ranking_position) answer += `   - Ranking: #${item.ranking_position}\n`
-      if (item.author) answer += `   - Author: ${item.author}\n`
-    } else {
-      if (item.stars) answer += `   - Stars: ${item.stars.toLocaleString()}\n`
-      if (item.forks) answer += `   - Forks: ${item.forks.toLocaleString()}\n`
-      if (item.owner) answer += `   - Owner: ${item.owner}\n`
-      if (item.language) answer += `   - Language: ${item.language}\n`
-    }
-  })
-
-  return answer.trim()
 }
 
 serve(async (req) => {
@@ -60,99 +33,91 @@ serve(async (req) => {
       )
     }
 
-    const supabase = createClient(config.database.url, config.database.serviceRoleKey)
-    console.log(`📝 Query: "${query}"`)
+    console.log(`\n${'='.repeat(60)}`)
+    console.log(`📥 Query: "${query}"`)
+    console.log(`${'='.repeat(60)}`)
 
-    // Analyze query with LLM (validate, classify intent, extract entities, determine routing)
-    const analysis = await analyzeQuery(query)
-    console.log(`🎯 Intent: ${analysis.intent} | Source: ${analysis.source} | Mode: ${analysis.answer_mode} | Confidence: ${(analysis.confidence * 100).toFixed(0)}%`)
-    console.log(`🔍 ${getRoutingExplanation(analysis)}`)
+    // Step 1: Plan (1 LLM call)
+    const plan = await createQueryPlan(query, top_k)
 
-    // Reject invalid queries early
-    if (!analysis.is_valid) {
+    if (!plan.is_valid) {
       return new Response(
         JSON.stringify({
-          answer: analysis.reason || 'Invalid query',
+          answer: plan.reason,
           sources: [],
-          confidence: 'low',
-          count: 0,
-          suggestions: analysis.suggestions || []
+          metadata: { intent: plan.intent, confidence: plan.confidence }
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Simple retry: if no results, ask LLM for broader query
-    let searchQuery = query
-    let results = await smartSearch(supabase, searchQuery, top_k, analysis.source, analysis.entities)
+    // Step 2: Execute (no LLM - parallel data fetching)
+    console.log(`⚡ Executing ${plan.data_sources.length} data source(s) in parallel...`)
 
-    if (results.length === 0) {
-      try {
-        const retryPrompt = `No results for: "${query}". Suggest broader search (2-5 words, no explanation):`
-        const { url: ollamaUrl, model: ollamaModel } = config.llm
-        const res = await fetch(`${ollamaUrl}/api/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: ollamaModel, prompt: retryPrompt, stream: false, options: { temperature: 0.3, num_predict: 50 } })
-        })
-        if (res.ok) {
-          const data = await res.json()
-          searchQuery = data.response?.trim() || query
-          results = await smartSearch(supabase, searchQuery, top_k, 'blog', {})
-        }
-      } catch (error) {
-        console.error('Retry failed:', error)
-      }
-    }
+    const allResults = await Promise.all(
+      plan.data_sources.map(ds => executeDataSource(ds))
+    )
+
+    // Flatten and deduplicate results
+    const results: SearchResult[] = allResults.flat()
+
+    console.log(`✅ Retrieved ${results.length} total results`)
 
     if (results.length === 0) {
       return new Response(
         JSON.stringify({
-          answer: `No results found for "${query}". Try rephrasing or being more specific.`,
+          answer: 'No relevant sources found for your query. Try rephrasing or broadening your question.',
           sources: [],
-          confidence: 'low',
-          count: 0
+          metadata: { intent: plan.intent, confidence: plan.confidence }
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // For market intelligence: use direct formatting for "top/list" queries, LLM for specific questions
-    let answer: string
-    const isListQuery = /\b(top|best|popular|trending|list)\b/i.test(query)
+    // Step 3: Synthesize (1 LLM call)
+    const answer = await generateAnswer(query, results, plan.intent)
 
-    if (analysis.intent === 'market_intelligence' && isListQuery && results.length > 0) {
-      // Direct formatting for lists (prevents hallucination)
-      answer = formatMarketIntelligence(query, results)
-    } else {
-      // Use LLM for specific questions (can extract info from descriptions)
-      answer = await generateAnswer(query, results, analysis.intent, analysis.answer_mode)
-    }
-
-    // Format sources
-    const sources = results.map((r: any, i: number) => ({
-      text: r.description || r.name || '',
-      score: r.similarity || (1.0 - i * 0.05),
+    // Format sources for response
+    const sources = results.map((r, i) => ({
+      position: i + 1,
+      name: r.name,
+      url: r.url,
       type: r.doc_type,
+      similarity: r.similarity,
       metadata: {
-        title: r.name?.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim(),
-        company: r.author || r.owner || 'N/A',
+        title: r.name,
         url: r.url,
-        downloads: r.downloads,
-        stars: r.stars,
-        likes: r.likes
-      }
+        doc_type: r.doc_type
+      },
+      ...(r.downloads && { downloads: r.downloads }),
+      ...(r.stars && { stars: r.stars }),
+      ...(r.current_interest && { current_interest: r.current_interest })
     }))
 
+    console.log(`✅ Answer generated successfully`)
+    console.log(`${'='.repeat(60)}\n`)
+
     return new Response(
-      JSON.stringify({ answer, sources, confidence: 'high', count: results.length }),
+      JSON.stringify({
+        answer,
+        sources,
+        metadata: {
+          intent: plan.intent,
+          confidence: plan.confidence,
+          data_sources_used: plan.data_sources.map(ds => ds.source)
+        }
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
     console.error('❌ Error:', error)
+
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

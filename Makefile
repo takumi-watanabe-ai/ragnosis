@@ -72,9 +72,9 @@ env-prod: ## Switch to production environment (.env.prod → .env)
 	@echo "✅ Switched to PRODUCTION environment"
 	@echo "⚠️  WARNING: All commands now use PRODUCTION database!"
 
-env-local: ## Switch to local environment (.env.local → .env)
-	@if [ ! -f .env.local ]; then echo "❌ .env.local not found!"; exit 1; fi
-	@cp .env.local .env
+env-local: ## Switch to local environment (.env.local.backup → .env)
+	@if [ ! -f .env.local.backup ]; then echo "❌ .env.local.backup not found!"; exit 1; fi
+	@cp .env.local.backup .env
 	@echo "✅ Switched to LOCAL environment"
 
 env-status: ## Show current environment
