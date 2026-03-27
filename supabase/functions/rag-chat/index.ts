@@ -79,21 +79,24 @@ serve(async (req) => {
     const answer = await generateAnswer(query, results, plan.intent)
 
     // Format sources for response
-    const sources = results.map((r, i) => ({
-      position: i + 1,
-      name: r.name,
-      url: r.url,
-      type: r.doc_type,
-      similarity: r.similarity,
-      metadata: {
-        title: r.name,
+    const sources = results.map((r, i) => {
+      const cleanName = r.name.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim()
+      return {
+        position: i + 1,
+        name: cleanName,
         url: r.url,
-        doc_type: r.doc_type
-      },
-      ...(r.downloads && { downloads: r.downloads }),
-      ...(r.stars && { stars: r.stars }),
-      ...(r.current_interest && { current_interest: r.current_interest })
-    }))
+        type: r.doc_type,
+        similarity: r.similarity,
+        metadata: {
+          title: cleanName,
+          url: r.url,
+          doc_type: r.doc_type
+        },
+        ...(r.downloads && { downloads: r.downloads }),
+        ...(r.stars && { stars: r.stars }),
+        ...(r.current_interest && { current_interest: r.current_interest })
+      }
+    })
 
     console.log(`✅ Answer generated successfully`)
     console.log(`${'='.repeat(60)}\n`)

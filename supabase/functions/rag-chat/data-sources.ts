@@ -17,7 +17,7 @@ const supabase = createClient(
 
 let aiSession: any = null
 
-// BM25-like reranking from original
+// BM25-like reranking with doc_type weighting
 function rerankResults(query: string, results: SearchResult[]): SearchResult[] {
   if (results.length <= 3) return results
 
@@ -40,7 +40,10 @@ function rerankResults(query: string, results: SearchResult[]): SearchResult[] {
     const completenessRatio = matchedTerms / Math.max(queryTerms.length, 1)
     const normalizedTermScore = Math.min(termScore / (queryTerms.length * 6), 1.0)
     const baseScore = ((r.similarity || 0) * 0.4) + (normalizedTermScore * 0.6)
-    const rerank_score = baseScore * completenessRatio * completenessRatio
+
+    // Boost repos/models over blog articles
+    const docTypeBoost = (r.doc_type === 'hf_model' || r.doc_type === 'github_repo') ? 1.3 : 1.0
+    const rerank_score = baseScore * completenessRatio * completenessRatio * docTypeBoost
 
     return { ...r, rerank_score }
   })

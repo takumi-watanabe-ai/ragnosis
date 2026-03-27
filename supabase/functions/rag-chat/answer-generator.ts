@@ -90,11 +90,10 @@ function buildAnswerPrompt(query: string, results: SearchResult[], intent: Query
   let context = 'SOURCES:\n'
 
   results.forEach((item, i) => {
-    const num = i + 1
     const cleanName = item.name.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim()
     const sourceLink = `**[${cleanName}](${item.url})**`
 
-    context += `\n[${num}] ${sourceLink}`
+    context += `\n- ${sourceLink}`
 
     // Add type indicator
     if (item.doc_type === 'hf_model') context += ` (Type: HuggingFace Model)`
@@ -156,10 +155,10 @@ function getInstructionsByIntent(intent: QueryIntent): string {
 
 LENGTH: Approximately ${config.llm.answer.targetWords} words. Be complete but concise.
 
-FORMATTING RULES (CRITICAL):
-- ALWAYS reference sources using EXACT format from SOURCES section: **[Name](url)**
-- Use bullet points for lists and multiple items
-- Structure your answer clearly with line breaks between points
+FORMATTING:
+- ALWAYS reference sources inline as clickable links: **[Name](url)**
+- Use bullet points for lists
+- Structure with line breaks
 
 GROUNDING RULES:
 - Use ONLY information explicitly shown in SOURCES

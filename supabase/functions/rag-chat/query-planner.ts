@@ -86,18 +86,18 @@ If the query mentions tools, frameworks, models, or concepts you don't recognize
 The search will find the answer - your job is just to route it correctly.
 
 ROUTING LOGIC:
-- Questions about tools/concepts (even unknown ones) → vector_search_unified
+- Questions ABOUT tools/frameworks/companies → vector_search_unified
 - HOW/WHAT/WHY/EXPLAIN/SIMILAR → vector_search_unified
-- TOP/POPULAR models/embeddings → top_models_by_downloads
-- TOP/POPULAR frameworks/tools/repos → top_repos_by_stars
-- TREND DATA (time-series) → search_trends
+- "TOP/BEST/POPULAR" + explicit ranking request → top_models_by_downloads or top_repos_by_stars
+- TREND DATA (time-series interest) → search_trends
 
 Examples:
-"What is X?" or "Similar to X?" → vector_search_unified (even if X is unknown)
-"Top frameworks" → top_repos_by_stars
-"Top models" → top_models_by_downloads
+"What model does X use?" → vector_search_unified (asking about a tool)
+"What is X?" → vector_search_unified
+"Top 10 embedding models" → top_models_by_downloads (explicit ranking)
+"Best frameworks for RAG" → top_repos_by_stars (explicit ranking)
 
-CRITICAL: Don't hallucinate params. Only set params you actually need (query, limit).
+CRITICAL: Default to vector_search_unified unless explicitly asking for rankings. Only set params you need (query, limit).
 
 RESPOND WITH VALID JSON ONLY.`
 }
