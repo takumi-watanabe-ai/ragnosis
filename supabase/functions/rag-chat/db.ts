@@ -1,287 +1,238 @@
 /**
- * Database queries - all data access in one place.
- * Handles both vector search (semantic) and SQL queries (structured).
+ * Database queries - simplified and clean
  */
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-import type { EnrichedResult } from '../_shared/types.ts'
 import { config } from './config.ts'
 
-// Lazy-loaded Supabase AI session for embeddings
 let aiSession: any = null
 
-/**
- * Vector search - semantic similarity on ragnosis_docs.
- * Generates embedding for query, then searches vector DB.
- */
-export async function vectorSearch(
-  supabase: SupabaseClient,
-  queryText: string,
-  options: {
-    top_k?: number
-    doc_type?: 'hf_model' | 'github_repo'
-    rag_category?: string
-  } = {}
-): Promise<EnrichedResult[]> {
-  const { top_k = 5, doc_type, rag_category } = options
+// ============================================================================
+// Keyword-Based Reranking (BM25-like scoring)
+// ============================================================================
 
-  // Generate embedding for query using Supabase AI or Transformers.js
-  const queryEmbedding = await generateEmbedding(queryText)
+function rerankResults(query: string, results: any[]): any[] {
+  if (results.length === 0) return results
+  if (results.length <= 3) return results
 
-  const { data, error } = await supabase.rpc('match_documents', {
-    query_embedding: queryEmbedding,
-    match_count: top_k,
-    filter_doc_type: doc_type,
-    filter_rag_category: rag_category
+  // Extract query terms (lowercase, remove common words)
+  const stopWords = new Set(['what', 'how', 'why', 'when', 'where', 'which', 'who', 'is', 'are', 'the', 'a', 'an', 'for', 'to', 'in', 'on', 'at', 'do', 'does'])
+  const queryTerms = query.toLowerCase()
+    .split(/\s+/)
+    .filter(term => term.length > 2 && !stopWords.has(term))
+
+  // Score each result
+  const scored = results.map(result => {
+    const text = `${result.name} ${result.description || ''}`.toLowerCase()
+
+    // Count term matches and track missing terms
+    let termScore = 0
+    let matchedTerms = 0
+
+    queryTerms.forEach(term => {
+      // Escape special regex characters
+      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = new RegExp(`\\b${escapedTerm}\\w*\\b`, 'gi')
+      const matches = text.match(regex)
+      if (matches) {
+        matchedTerms++
+        termScore += matches.length
+        // HUGE bonus for matching query terms in the title/name
+        // This ensures "Supabase/gte-small" ranks higher than blog articles
+        if (result.name.toLowerCase().includes(term)) {
+          termScore += 10 // Increased from 5 to 10
+        }
+      }
+    })
+
+    const missingTerms = queryTerms.length - matchedTerms
+
+    // Completeness ratio (0-1)
+    const completenessRatio = matchedTerms / Math.max(queryTerms.length, 1)
+
+    // Normalize term score
+    const normalizedTermScore = Math.min(termScore / (queryTerms.length * 6), 1.0)
+
+    // STRICT: Results must match ALL terms, or score drops dramatically
+    // If missing ANY term, multiply final score by completeness ratio squared
+    const completenessMultiplier = completenessRatio * completenessRatio // Squared penalty
+
+    // Calculate base score
+    const baseScore = (result.similarity * 0.4) + (normalizedTermScore * 0.6)
+
+    // Apply completeness multiplier (missing terms cause exponential drop)
+    const rerank_score = baseScore * completenessMultiplier
+
+    return { ...result, rerank_score, term_matches: termScore, missing: missingTerms }
   })
 
-  if (error) throw error
-  if (!data) return []
+  return scored
+    .sort((a, b) => b.rerank_score - a.rerank_score)
+    .slice(0, 5)
+}
 
-  // Enrich with SQL details
-  return await enrichFromSQL(supabase, data.map((r: any) => ({
+// ============================================================================
+// Embedding Generation
+// ============================================================================
+
+async function generateEmbedding(text: string): Promise<number[]> {
+  const timeoutMs = 15000 // 15 second timeout for embedding generation
+
+  const embedPromise = (async () => {
+    try {
+      if (!aiSession) {
+        console.log(`🤖 Initializing AI session with model: ${config.embedding.model}`)
+        // @ts-ignore
+        aiSession = new Supabase.ai.Session(config.embedding.model)
+        console.log(`✅ AI session initialized`)
+      }
+      console.log(`🔢 Generating embedding for: "${text.substring(0, 50)}..."`)
+      const embedding = await aiSession.run(text, { mean_pool: true, normalize: true })
+      console.log(`✅ Embedding generated: ${embedding.length} dimensions`)
+      if (embedding.length !== config.embedding.dimensions) {
+        throw new Error(`Expected ${config.embedding.dimensions} dimensions, got ${embedding.length}`)
+      }
+      return embedding
+    } catch (error) {
+      console.error(`❌ Embedding generation failed:`, error)
+      throw error
+    }
+  })()
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`Embedding generation timed out after ${timeoutMs}ms. Model may need to download.`)), timeoutMs)
+  })
+
+  return await Promise.race([embedPromise, timeoutPromise])
+}
+
+// ============================================================================
+// Unified Smart Search (with entity-based search)
+// ============================================================================
+
+export interface SearchEntities {
+  frameworks?: string[]
+  vector_dbs?: string[]
+  models?: string[]
+  companies?: string[]
+  concepts?: string[]
+}
+
+export async function smartSearch(
+  supabase: SupabaseClient,
+  query: string,
+  top_k: number = 5,
+  preferredSource?: string,
+  entities?: SearchEntities
+): Promise<any[]> {
+  const embedding = await generateEmbedding(query)
+
+  const { data, error } = await supabase.rpc('vector_search_all_docs', {
+    query_embedding: embedding,
+    match_limit: top_k * 2
+  })
+
+  if (error) {
+    console.error(`❌ Vector search failed:`, error)
+    return []
+  }
+
+  let results = data || []
+
+  // Deduplicate by URL (keep highest similarity)
+  const urlMap = new Map<string, any>()
+  results.forEach(r => {
+    if (!urlMap.has(r.url) || r.similarity > urlMap.get(r.url).similarity) {
+      urlMap.set(r.url, r)
+    }
+  })
+  results = Array.from(urlMap.values()).sort((a, b) => b.similarity - a.similarity)
+
+  // Rerank with keyword matching for better relevance
+  results = rerankResults(query, results)
+
+  // Enrich repos/models with SQL metadata
+  const repoNames = results.filter(r => r.doc_type === 'github_repo').map(r => r.name)
+  const modelNames = results.filter(r => r.doc_type === 'hf_model').map(r => r.name)
+
+  if (repoNames.length > 0 || modelNames.length > 0) {
+    console.log(`🔧 Enriching ${modelNames.length} models, ${repoNames.length} repos`)
+
+    const [models, repos] = await Promise.all([
+      modelNames.length > 0 ? searchModels(supabase, modelNames.join(' '), modelNames.length) : [],
+      repoNames.length > 0 ? searchRepos(supabase, repoNames.join(' '), repoNames.length) : []
+    ])
+
+    const enriched = results.map(r => {
+      const match = [...models, ...repos].find(e => e.name === r.name)
+      return match ? { ...r, ...match, similarity: r.similarity } : r
+    }).slice(0, top_k)
+
+    return enriched
+  }
+
+  return results.slice(0, top_k)
+}
+
+// ============================================================================
+// Individual Search Functions
+// ============================================================================
+
+async function searchModels(supabase: SupabaseClient, query: string, limit: number) {
+  const { data, error } = await supabase.rpc('keyword_search_models', {
+    search_query: query,
+    query_limit: limit
+  })
+
+  if (error) {
+    console.error(`❌ RPC keyword_search_models failed:`, error)
+    return []
+  }
+
+  if (!data?.success) {
+    console.warn(`⚠️ keyword_search_models returned no success:`, data)
+    return []
+  }
+
+  return (data.data.results || []).map((m: any) => ({
+    id: m.id,
+    name: m.name,
+    description: m.description,
+    url: m.url,
+    doc_type: 'hf_model',
+    similarity: m.similarity,
+    downloads: m.downloads,
+    likes: m.likes,
+    author: m.author
+  }))
+}
+
+async function searchRepos(supabase: SupabaseClient, query: string, limit: number) {
+  const { data, error } = await supabase.rpc('keyword_search_repos', {
+    search_query: query,
+    query_limit: limit
+  })
+
+  if (error) {
+    console.error(`❌ RPC keyword_search_repos failed:`, error)
+    return []
+  }
+
+  if (!data?.success) {
+    console.warn(`⚠️ keyword_search_repos returned no success:`, data)
+    return []
+  }
+
+  return (data.data.results || []).map((r: any) => ({
     id: r.id,
     name: r.name,
     description: r.description,
     url: r.url,
-    doc_type: r.doc_type,
-    rag_category: r.rag_category,
-    similarity: r.similarity
-  })))
-}
-
-/**
- * Generate embedding for query text.
- * Uses Supabase AI with gte-small (matches Python pipeline: Supabase/gte-small).
- * Dimensions: 384 (same as all-MiniLM-L6-v2).
- */
-async function generateEmbedding(text: string): Promise<number[]> {
-  try {
-    // Initialize AI session on first use (cached for subsequent requests)
-    if (!aiSession) {
-      console.log(`Initializing Supabase AI session with ${config.embedding.model}...`)
-      // @ts-ignore - Supabase.ai is available in edge runtime
-      aiSession = new Supabase.ai.Session(config.embedding.model)
-      console.log('AI session initialized')
-    }
-
-    // Generate embedding with mean pooling and normalization
-    const embedding = await aiSession.run(text, {
-      mean_pool: true,
-      normalize: true
-    })
-
-    // Verify dimensions match config
-    if (embedding.length !== config.embedding.dimensions) {
-      throw new Error(`Expected ${config.embedding.dimensions} dimensions, got ${embedding.length}`)
-    }
-
-    return embedding
-  } catch (error) {
-    console.error('Embedding generation failed:', error)
-    throw new Error(`Failed to generate embedding: ${error.message}`)
-  }
-}
-
-/**
- * SQL queries - structured queries for common patterns.
- */
-export async function sqlQuery(
-  supabase: SupabaseClient,
-  queryType: 'top_models' | 'top_repos' | 'embedding_models' | 'trends' | 'search',
-  params: { limit?: number; keyword?: string } = {}
-): Promise<EnrichedResult[]> {
-  const limit = params.limit || 5
-
-  switch (queryType) {
-    case 'top_models':
-      return await getTopModels(supabase, limit)
-    case 'top_repos':
-      return await getTopRepos(supabase, limit)
-    case 'embedding_models':
-      return await getEmbeddingModels(supabase, limit)
-    case 'trends':
-      return await getTrends(supabase, limit)
-    case 'search':
-      return await searchAll(supabase, params.keyword || '', limit)
-    default:
-      return []
-  }
-}
-
-// ============================================================================
-// SQL Query Implementations
-// ============================================================================
-
-async function getTopModels(supabase: SupabaseClient, limit: number): Promise<EnrichedResult[]> {
-  const { data } = await supabase
-    .from('hf_models')
-    .select('*')
-    .eq('is_rag_related', true)
-    .order('downloads', { ascending: false })
-    .limit(limit)
-
-  return transformModels(data || [])
-}
-
-async function getTopRepos(supabase: SupabaseClient, limit: number): Promise<EnrichedResult[]> {
-  const { data } = await supabase
-    .from('github_repos')
-    .select('*')
-    .eq('is_rag_related', true)
-    .order('stars', { ascending: false })
-    .limit(limit)
-
-  return transformRepos(data || [])
-}
-
-async function getEmbeddingModels(supabase: SupabaseClient, limit: number): Promise<EnrichedResult[]> {
-  const { data } = await supabase
-    .from('hf_models')
-    .select('*')
-    .eq('is_rag_related', true)
-    .eq('rag_category', 'embedding')
-    .order('downloads', { ascending: false })
-    .limit(limit)
-
-  return transformModels(data || [])
-}
-
-async function getTrends(supabase: SupabaseClient, limit: number): Promise<any[]> {
-  const { data } = await supabase
-    .from('google_trends')
-    .select('*')
-    .order('current_interest', { ascending: false })
-    .limit(limit)
-
-  return (data || []).map(t => ({
-    id: t.id,
-    name: t.keyword,
-    description: `Search interest: ${t.current_interest}%`,
-    url: `https://trends.google.com/trends/explore?q=${encodeURIComponent(t.keyword)}`,
-    doc_type: 'trend',
-    rag_category: 'trend',
-    similarity: 1.0
-  }))
-}
-
-async function searchAll(supabase: SupabaseClient, keyword: string, limit: number): Promise<EnrichedResult[]> {
-  const k = keyword.toLowerCase()
-
-  // Search models
-  const { data: models } = await supabase
-    .from('hf_models')
-    .select('*')
-    .eq('is_rag_related', true)
-    .or(`model_name.ilike.%${k}%,description.ilike.%${k}%,author.ilike.%${k}%`)
-    .limit(Math.ceil(limit / 2))
-
-  // Search repos
-  const { data: repos } = await supabase
-    .from('github_repos')
-    .select('*')
-    .eq('is_rag_related', true)
-    .or(`repo_name.ilike.%${k}%,description.ilike.%${k}%,owner.ilike.%${k}%`)
-    .limit(Math.ceil(limit / 2))
-
-  return [
-    ...transformModels(models || []),
-    ...transformRepos(repos || [])
-  ].slice(0, limit)
-}
-
-// ============================================================================
-// Enrichment & Transformation
-// ============================================================================
-
-async function enrichFromSQL(supabase: SupabaseClient, vectorResults: any[]): Promise<EnrichedResult[]> {
-  const modelIds = vectorResults.filter(r => r.doc_type === 'hf_model').map(r => r.id)
-  const repoIds = vectorResults.filter(r => r.doc_type === 'github_repo').map(r => r.id)
-
-  const modelDetails = new Map()
-  const repoDetails = new Map()
-
-  if (modelIds.length > 0) {
-    const { data } = await supabase
-      .from('hf_models')
-      .select('*')
-      .in('id', modelIds)
-      .order('snapshot_date', { ascending: false })
-
-    if (data) {
-      for (const m of data) {
-        if (!modelDetails.has(m.id)) modelDetails.set(m.id, m)
-      }
-    }
-  }
-
-  if (repoIds.length > 0) {
-    const { data } = await supabase
-      .from('github_repos')
-      .select('*')
-      .in('id', repoIds)
-      .order('snapshot_date', { ascending: false })
-
-    if (data) {
-      for (const r of data) {
-        if (!repoDetails.has(r.id)) repoDetails.set(r.id, r)
-      }
-    }
-  }
-
-  return vectorResults.map(vr => {
-    const enriched = { ...vr }
-    const details = vr.doc_type === 'hf_model' ? modelDetails.get(vr.id) : repoDetails.get(vr.id)
-
-    if (details) {
-      if (vr.doc_type === 'hf_model') {
-        enriched.downloads = details.downloads
-        enriched.likes = details.likes
-        enriched.author = details.author
-        enriched.task = details.task
-      } else {
-        enriched.stars = details.stars
-        enriched.forks = details.forks
-        enriched.owner = details.owner
-        enriched.language = details.language
-      }
-      enriched.ranking_position = details.ranking_position
-    }
-
-    return enriched
-  })
-}
-
-function transformModels(models: any[]): EnrichedResult[] {
-  return models.map(m => ({
-    id: m.id,
-    name: m.model_name,
-    description: m.description || '',
-    url: m.url,
-    doc_type: 'hf_model',
-    rag_category: m.rag_category,
-    similarity: 1.0,
-    downloads: m.downloads,
-    likes: m.likes,
-    ranking_position: m.ranking_position,
-    author: m.author,
-    task: m.task
-  }))
-}
-
-function transformRepos(repos: any[]): EnrichedResult[] {
-  return repos.map(r => ({
-    id: r.id,
-    name: r.repo_name,
-    description: r.description || '',
-    url: r.url,
     doc_type: 'github_repo',
-    rag_category: r.rag_category,
-    similarity: 1.0,
+    similarity: r.similarity,
     stars: r.stars,
     forks: r.forks,
-    ranking_position: r.ranking_position,
-    owner: r.owner,
-    language: r.language
+    owner: r.author
   }))
 }
+

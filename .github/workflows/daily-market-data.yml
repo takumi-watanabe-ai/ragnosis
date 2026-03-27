@@ -26,115 +26,24 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch HuggingFace models
-        id: hf
+      - name: Fetch market data (HF, GitHub, Trends)
+        id: pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
-        run: |
-          echo "📥 Fetching HuggingFace models..."
-          python -c "
-          from src.data_collection.hf_fetcher import HFModelFetcher
-          from supabase import create_client
-          import os
-          from datetime import date
-
-          supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY'))
-          fetcher = HFModelFetcher(api_token=os.getenv('HUGGINGFACE_API_KEY'))
-          models = fetcher.fetch_top_models(max_models=200)
-          rag_models = [m for m in models if m.is_rag_related]
-
-          rows = [{
-              'id': m.id, 'snapshot_date': date.today().isoformat(),
-              'model_name': m.model_name, 'author': m.author, 'task': m.task,
-              'downloads': m.downloads, 'likes': m.likes,
-              'ranking_position': m.ranking_position, 'is_rag_related': m.is_rag_related,
-              'rag_category': m.rag_category, 'tags': m.tags,
-              'description': m.description, 'url': m.url, 'last_updated': m.last_updated
-          } for m in rag_models]
-
-          if rows:
-              supabase.table('hf_models').upsert(rows).execute()
-              print(f'✅ Inserted {len(rows)} HF models')
-          "
-
-      - name: Fetch GitHub repos
-        id: github
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          echo "📥 Fetching GitHub repositories..."
-          python -c "
-          from src.data_collection.github_fetcher import GitHubFetcher
-          from supabase import create_client
-          import os
-          from datetime import date
-
-          supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY'))
-          fetcher = GitHubFetcher(api_token=os.getenv('GITHUB_TOKEN'))
-          repos = fetcher.fetch_top_repos(max_repos=200)
-          rag_repos = [r for r in repos if r.is_rag_related]
-
-          rows = [{
-              'id': r.id, 'snapshot_date': date.today().isoformat(),
-              'repo_name': r.repo_name, 'owner': r.owner, 'description': r.description,
-              'stars': r.stars, 'forks': r.forks, 'watchers': r.watchers,
-              'language': r.language, 'topics': r.topics,
-              'ranking_position': r.ranking_position, 'is_rag_related': r.is_rag_related,
-              'rag_category': r.rag_category, 'url': r.url,
-              'created_at': r.created_at, 'updated_at': r.updated_at
-          } for r in rag_repos]
-
-          if rows:
-              supabase.table('github_repos').upsert(rows).execute()
-              print(f'✅ Inserted {len(rows)} GitHub repos')
-          "
-
-      - name: Fetch Google Trends
-        id: trends
-        continue-on-error: true  # Trends can be flaky
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          echo "📥 Fetching Google Trends..."
-          python -c "
-          from src.data_collection.trends_fetcher import GoogleTrendsFetcher
-          from supabase import create_client
-          import os
-          from datetime import date
-
-          supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY'))
-          fetcher = GoogleTrendsFetcher()
-          trends = fetcher.fetch_trends()
-
-          rows = [{
-              'id': t.id, 'snapshot_date': date.today().isoformat(),
-              'keyword': t.keyword, 'category': t.category, 'geo': t.geo,
-              'timeframe': t.timeframe, 'current_interest': t.current_interest,
-              'avg_interest': t.avg_interest, 'peak_interest': t.peak_interest,
-              'trend_direction': t.trend_direction, 'time_series': t.time_series,
-              'related_queries': t.related_queries
-          } for t in trends]
-
-          if rows:
-              supabase.table('google_trends').upsert(rows).execute()
-              print(f'✅ Inserted {len(rows)} trends')
-          "
+          echo "📥 Running data pipeline..."
+          python src/data_collection/pipeline.py
 
       - name: Summary
         if: always()
         run: |
-          if [ "${{ steps.hf.outcome }}" != "success" ] || [ "${{ steps.github.outcome }}" != "success" ]; then
+          if [ "${{ steps.pipeline.outcome }}" != "success" ]; then
             echo "::error::❌ CRITICAL: Time-series data fetch failed!"
             echo "::error::This creates gaps in analytics data"
             exit 1
-          elif [ "${{ steps.trends.outcome }}" != "success" ]; then
-            echo "::warning::⚠️ Google Trends failed (non-critical)"
-            echo "✅ HF models and GitHub repos saved successfully"
           else
             echo "✅ All market data fetched successfully!"
           fi

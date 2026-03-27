@@ -9,6 +9,7 @@ import os
 import requests
 from typing import Dict
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -112,24 +113,29 @@ def main():
     """Main Streamlit app."""
     # Header
     st.title("🔬 RAGnosis")
-    st.subheader("RAG Market Intelligence")
-    st.markdown("Ask questions about RAG models, frameworks, and adoption trends")
+    st.subheader("RAG Market Intelligence + Expert Troubleshooting")
+    st.markdown("Ask about RAG models, frameworks, trends, or get expert help with implementation challenges")
 
     # Sidebar
     with st.sidebar:
         st.header("About")
         st.markdown("""
-        RAGnosis provides market intelligence for RAG technology using:
-        - **🤗 HuggingFace**: Popular models & download metrics
-        - **💻 GitHub**: Framework stars & activity
-        - **📈 Google Trends**: Search interest over time
+        RAGnosis combines market intelligence with expert troubleshooting knowledge:
+        - **🤗 HuggingFace**: 76 RAG models with download metrics
+        - **💻 GitHub**: 46 RAG frameworks & tools
+        - **📈 Google Trends**: RAG adoption trends
+        - **📚 Blog Archive**: 4,018 expert articles (LangChain, LlamaIndex, Pinecone, Weaviate)
 
-        **Example Questions:**
-        - What are the top RAG models?
-        - Which RAG frameworks should I use?
-        - What embedding models are most popular?
-        - What are the RAG trends?
-        - Which vector databases are trending?
+        **Market Intelligence:**
+        - What are the top embedding models?
+        - Which RAG frameworks are most popular?
+        - Show me RAG trends over time
+
+        **Expert Troubleshooting:**
+        - How to fix chunking errors in RAG?
+        - How to improve retrieval accuracy?
+        - Best practices for production RAG deployment
+        - Guide to choosing vector databases
         """)
 
         st.divider()
@@ -166,29 +172,32 @@ def main():
             # Display markdown content
             st.markdown(message["content"], unsafe_allow_html=False)
 
-            # Show detailed source metadata if available
+            # Show search results as cards if available
             if message["role"] == "assistant" and "sources" in message and show_sources:
                 if message["sources"]:
-                    with st.expander("🔍 Source Details & Metadata", expanded=False):
-                        for i, source in enumerate(message["sources"], 1):
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.markdown(f"**{i}. {source['metadata']['title']}**")
-                                st.caption(f"By {source['metadata']['company']}")
-                            with col2:
-                                if source['metadata'].get('downloads'):
-                                    st.metric("Downloads", f"{source['metadata']['downloads']:,}")
-                                elif source['metadata'].get('stars'):
-                                    st.metric("Stars", f"{source['metadata']['stars']:,}")
+                    st.markdown("### Search Results")
+                    cols = st.columns(3, gap="small")  # Small gap between columns
+                    for i, source in enumerate(message["sources"]):
+                        col = cols[i % 3]
+                        with col:
+                            title = source['metadata']['title']
+                            url = source['metadata']['url']
 
-                            if source['metadata']['url']:
-                                st.link_button("View Original →", source['metadata']['url'], use_container_width=True)
+                            # Extract domain from URL
+                            domain = urlparse(url).netloc
 
-                            if i < len(message["sources"]):
-                                st.divider()
+                            # Create compact card
+                            st.markdown(f"""
+                            <div style="border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 6px;">
+                                <a href="{url}" target="_blank" style="text-decoration: none; color: inherit;">
+                                    <div style="font-size: 13px; font-weight: 500; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis;">{title}</div>
+                                    <div style="font-size: 11px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{domain}</div>
+                                </a>
+                            </div>
+                            """, unsafe_allow_html=True)
 
     # Chat input
-    if prompt := st.chat_input("Ask about RAG models, frameworks, or trends..."):
+    if prompt := st.chat_input("Ask about RAG models, trends, or how to solve implementation challenges..."):
         # Add user message to history
         st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -198,7 +207,7 @@ def main():
 
         # Generate response
         with st.chat_message("assistant"):
-            with st.spinner("Searching RAG market data..."):
+            with st.spinner("Searching market data and expert knowledge base..."):
                 result = client.ask_question(prompt, top_k=top_k)
 
             # Display markdown answer (now includes formatted sources)
@@ -207,28 +216,32 @@ def main():
             # Show confidence if enabled
             if show_confidence and "confidence" in result:
                 confidence = result.get("confidence", "unknown")
+                count = result.get("count", 0)
                 confidence_emoji = "🟢" if confidence == "high" else "🟡" if confidence == "medium" else "🔴"
-                st.caption(f"{confidence_emoji} Confidence: {confidence} | Sources: {result.get('count', 0)}")
+                st.info(f"{confidence_emoji} **Confidence:** {confidence} | **Sources:** {count}", icon="ℹ️")
 
-            # Show detailed source metadata
+            # Show search results as cards
             if show_sources and result.get("sources"):
-                with st.expander("🔍 Source Details & Metadata", expanded=False):
-                    for i, source in enumerate(result["sources"], 1):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(f"**{i}. {source['metadata']['title']}**")
-                            st.caption(f"By {source['metadata']['company']}")
-                        with col2:
-                            if source['metadata'].get('downloads'):
-                                st.metric("Downloads", f"{source['metadata']['downloads']:,}")
-                            elif source['metadata'].get('stars'):
-                                st.metric("Stars", f"{source['metadata']['stars']:,}")
+                st.markdown("### Search Results")
+                cols = st.columns(3, gap="small")  # Small gap between columns
+                for i, source in enumerate(result["sources"]):
+                    col = cols[i % 3]
+                    with col:
+                        title = source['metadata']['title']
+                        url = source['metadata']['url']
 
-                        if source['metadata']['url']:
-                            st.link_button("View Original →", source['metadata']['url'], use_container_width=True)
+                        # Extract domain from URL
+                        domain = urlparse(url).netloc
 
-                        if i < len(result["sources"]):
-                            st.divider()
+                        # Create compact card
+                        st.markdown(f"""
+                        <div style="border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 6px;">
+                            <a href="{url}" target="_blank" style="text-decoration: none; color: inherit;">
+                                <div style="font-size: 13px; font-weight: 500; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis;">{title}</div>
+                                <div style="font-size: 11px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{domain}</div>
+                            </a>
+                        </div>
+                        """, unsafe_allow_html=True)
 
         # Add assistant response to history
         st.session_state.messages.append({

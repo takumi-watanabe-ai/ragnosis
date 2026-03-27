@@ -59,3 +59,6 @@ logs/
 
 # Serena
 .serena/
+
+Claude.mk
+Claude.md

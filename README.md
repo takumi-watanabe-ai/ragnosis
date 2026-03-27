@@ -1,34 +1,47 @@
 # RAGnosis
 
-> **Diagnose the RAG market with AI-powered intelligence**
+> **AI-powered market intelligence for RAG technology decisions**
 
-AI-powered market intelligence platform for VCs, Product Managers, and Founders making RAG technology decisions.
-
-**Status:** 🚧 POC Development - Analytics Phase
+**Status:** 🚀 Advanced RAG System - Production Ready
 
 ---
 
-## What This Does
+## What It Does
 
-RAGnosis helps you make data-driven decisions about RAG (Retrieval-Augmented Generation) technology:
+Market intelligence platform for VCs, Product Managers, and Founders making RAG technology decisions. Combines quantitative metrics (downloads, stars) with expert knowledge from 4,018+ blog articles.
 
-- **For VCs:** Identify promising RAG startups and investment opportunities
-- **For Product Managers:** Track competitive RAG features and adoption trends
-- **For Founders:** Understand market positioning and technical landscape
+## Key Features
 
-## Current Features (Analytics Phase)
+🤖 **LLM Query Preprocessing** - Ollama (qwen2.5:3b) analyzes queries to:
+- Classify intent (market intelligence, implementation, troubleshooting, comparison)
+- Extract entities (frameworks, models, vector DBs, companies)
+- Route to optimal data source (SQL vs vector search)
+- Enhance queries with context
 
-✅ **Time-Series Analytics** (SQL-powered)
-- HuggingFace model trends (downloads, rankings over time)
-- GitHub repository growth (stars, forks, activity)
-- Google search interest (trend detection)
-- RAG market share analysis
+🔍 **Hybrid Search** - Best of both worlds:
+- **Vector**: pgvector cosine similarity (384-dim embeddings)
+- **Keyword**: PostgreSQL full-text search (BM25-like `ts_rank_cd`)
+- Searches across blogs, HuggingFace models, GitHub repos
 
-🚧 **Coming Next: AI Research Agent**
-- Natural language queries over unstructured content
-- Multi-step reasoning and planning
-- Synthesizes insights from papers, blogs, discussions
-- Source attribution and citations
+📊 **BM25 Reranking** - Custom algorithm with:
+- Term frequency scoring + stop word filtering
+- 10x title match boosting
+- Completeness penalty (missing terms = exponential score drop)
+
+🔧 **Data Enrichment** - Merges vector results with SQL metrics:
+- Downloads, stars, likes, forks
+- RAG category classification
+
+🎯 **Intent-Specific Answers** - Templates optimized per query type:
+- Market intelligence: Lists with metrics
+- Implementation: Actionable steps
+- Troubleshooting: Problem → Solution
+- Comparison: Side-by-side analysis
+
+📈 **Time-Series Analytics** - SQL-powered trends:
+- HuggingFace model downloads over time
+- GitHub repository growth
+- Google search interest
 
 ---
 
@@ -164,90 +177,69 @@ Analytics Queries
 
 ## Roadmap
 
-### ✅ Phase 1: Analytics Foundation (Current)
-- [x] SQL schema with time-series tables
-- [x] Data fetchers (HF, GitHub, Trends)
-- [x] Ingestion pipeline
-- [ ] Verify 30 days of historical data
+**✅ Completed:**
+- Analytics foundation (SQL time-series, data fetchers)
+- Content layer (4,018 blog articles, embeddings, pgvector)
+- Advanced RAG system:
+  - LLM query preprocessing (intent, entities, routing)
+  - Hybrid search (vector + keyword)
+  - BM25 reranking (TypeScript)
+  - Data enrichment (SQL metrics merge)
+  - Intent-specific answer generation
 
-### 🚧 Phase 2: Content Layer (In Progress)
-- [x] Blog post aggregator (RSS feeds + historical)
-  - LangChain, LlamaIndex, Pinecone, Weaviate, HuggingFace blogs
-  - Historical scraping + daily RSS monitoring
-  - Auto-filtered for RAG relevance
-- [x] Vector embeddings for blog content
-- [ ] ArXiv paper scraper
-- [ ] HackerNews discussion fetcher
+**🚧 Next:**
+- Cross-encoder neural reranking
+- Multi-query expansion
+- Semantic caching
+- ArXiv + HackerNews integration
 
-### 📋 Phase 3: AI Research Agent
-- [ ] LangChain agent orchestration
-- [ ] Tool definitions (SQL query, vector search)
-- [ ] Natural language interface
-- [ ] Multi-step reasoning with planning
-
-### 📋 Phase 4: Production Deploy
-- [ ] Next.js frontend (Vercel)
-- [ ] Edge Functions for agent
-- [ ] Custom domain (ragnosis.com)
-- [ ] Analytics tracking
+**📋 Future:**
+- Next.js frontend + chat UI
+- Analytics dashboard
+- RAGAS evaluation
 
 ---
 
 ## Architecture
 
-**Current (Analytics Only):**
 ```
-Data Sources → Daily Fetch → SQL Tables → Analytics Queries
+Query → LLM Preprocessing → Hybrid Search → BM25 Reranking → Data Enrichment → Answer Generation
+         (qwen2.5:3b)        (Vector+Keyword)  (TypeScript)    (SQL merge)      (qwen2.5:3b)
+              ↓                     ↓                ↓               ↓                ↓
+         Intent/Entities      pgvector+BM25      TF scoring     +Downloads       Templated
+         Smart routing        across 4K docs     +Title boost   +Stars/Likes     by intent
 ```
 
-**Future (Full System):**
-```
-┌─────────────────────────────────────────────┐
-│  UI (Next.js on Vercel)                     │
-│  ├─ Analytics Dashboard (SQL queries)       │
-│  └─ AI Chat Interface (agent)               │
-└────────────────┬────────────────────────────┘
-                 │
-        ┌────────┴─────────┐
-        ▼                  ▼
-┌──────────────┐   ┌──────────────────┐
-│ Supabase SQL │   │ Vercel Edge Fn   │
-│ (Analytics)  │   │ (Agent)          │
-└──────────────┘   └────────┬─────────┘
-                            │
-                   ┌────────┴─────────┐
-                   ▼                  ▼
-           ┌──────────────┐  ┌──────────────┐
-           │ pgvector     │  │ LLM          │
-           │ (RAG)        │  │ (OpenRouter) │
-           └──────────────┘  └──────────────┘
-```
+**Stack:**
+- **Edge Function**: Deno (Supabase)
+- **Database**: PostgreSQL + pgvector + GIN indexes
+- **LLM**: Ollama qwen2.5:3b (query analysis + answer generation)
+- **Embeddings**: Supabase.ai.Session (gte-small, 384-dim)
+- **Data Pipeline**: Python 3.13 → GitHub Actions (daily)
 
 ---
 
 ## Documentation
 
-- [REQUIREMENTS.md](REQUIREMENTS.md) - Full project specification
-- [Supabase Schema](supabase/migrations/20260324_initial_schema.sql) - Database design
+- [Example Queries](docs/example_queries.md) - Query patterns & testing
+- [Database Schema](supabase/migrations/) - PostgreSQL + pgvector design
+- [Edge Function](supabase/functions/rag-chat/) - RAG implementation
 
 ---
 
 ## Tech Stack
 
-**Backend:**
-- **Database:** Supabase (PostgreSQL + pgvector)
-- **Embeddings:** sentence-transformers/all-MiniLM-L6-v2
-- **Agent:** LangChain (coming soon)
-- **LLM:** OpenRouter API
-
-**Frontend (Coming Soon):**
-- **Framework:** Next.js
-- **Deployment:** Vercel
-- **Styling:** Tailwind CSS
-
-**Data Pipeline:**
-- **Language:** Python 3.13
-- **Automation:** GitHub Actions (daily cron)
+| Component | Technology |
+|-----------|-----------|
+| **Runtime** | Deno (Supabase Edge Functions) |
+| **Database** | PostgreSQL + pgvector + GIN indexes |
+| **LLM** | Ollama qwen2.5:3b-instruct |
+| **Embeddings** | Supabase.ai.Session (gte-small, 384-dim) |
+| **Vector Search** | pgvector cosine similarity |
+| **Keyword Search** | PostgreSQL full-text (ts_rank_cd) |
+| **Reranking** | Custom BM25 (TypeScript) |
+| **Data Pipeline** | Python 3.13 + GitHub Actions |
+| **Frontend** | Next.js (planned) |
 
 ---
 
