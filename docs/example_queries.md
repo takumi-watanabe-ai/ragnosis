@@ -355,16 +355,12 @@ The system automatically routes queries to the right handler:
 - Handler: Direct SQL on hf_models/github_repos tables
 - Example: "top RAG models" → SQL query by downloads
 
-**Blog Search** (Expert knowledge) - ENHANCED
-- Patterns: "how to", "how do", "how can", "fix", "solve", "resolve", "error", "issue", "problem", "troubleshoot", "guide", "tutorial", "best practice", "improve", "optimize", "implement", "setup", "prevent", "handle", "compare", "vs", "explain", "understand"
-- Handler: Vector search on blog_docs (4,018 articles) with similarity threshold (0.75+)
-- Example: "how to fix errors" → Semantic search
-- Quality: Only returns results with 75%+ relevance to ensure high quality
-
-**Vector Search** (Fallback)
-- Patterns: Everything else
-- Handler: Vector search on ragnosis_docs (61 items)
+**Vector Search** (Unified semantic search)
+- Patterns: "how to", "explain", conceptual queries, troubleshooting, comparisons
+- Handler: Unified vector search on documents table (models, repos, blog articles)
+- Example: "how to fix errors" → Semantic search across all document types
 - Example: "explain semantic search" → Conceptual queries
+- Quality: BM25 reranking for relevance
 
 ---
 
@@ -458,11 +454,11 @@ If you get this message, it could mean:
    - This ensures high quality but may miss edge cases
    - Try broader queries: "RAG best practices" vs "specific technique X"
 
-3. **Data not loaded**: Verify blog embeddings are generated
+3. **Data not loaded**: Verify embeddings are generated
    ```bash
-   # Check data in tables
-   python3 -c "from supabase import create_client; ..."
-   # Should show: blog_articles=803, blog_docs=4018
+   # Check unified documents table
+   make dbl Q="SELECT doc_type, COUNT(*) FROM documents GROUP BY doc_type;"
+   # Should show: hf_model, github_repo, blog_article counts
    ```
 
 4. **Routing issue**: Add debug output to see which handler was used

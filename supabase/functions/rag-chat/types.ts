@@ -11,8 +11,6 @@ export type QueryIntent =
   | 'invalid'              // Off-topic
 
 export type DataSourceType =
-  | 'keyword_search_models'
-  | 'keyword_search_repos'
   | 'top_models_by_downloads'
   | 'top_repos_by_stars'
   | 'search_trends'
@@ -47,23 +45,35 @@ export interface SearchResult {
   doc_type: 'hf_model' | 'github_repo' | 'google_trend' | 'blog_article'
   similarity?: number
   rerank_score?: number
+  rag_category?: string
+
   // Model-specific
   downloads?: number
   likes?: number
-  ranking_position?: number
   author?: string
-  rag_category?: string
+  task?: string  // NEW: HF model task type
+
   // Repo-specific
   stars?: number
   forks?: number
   owner?: string
   language?: string
+
+  // Shared metrics
+  ranking_position?: number
+
   // Trend-specific
   current_interest?: number
   avg_interest?: number
   peak_interest?: number
+
   // Blog-specific
   content?: string
+  published_at?: string
+  content_source?: string  // NEW: blog source
+
+  // Metadata tracking
+  snapshot_date?: string
 }
 
 export interface DataSourceResults {

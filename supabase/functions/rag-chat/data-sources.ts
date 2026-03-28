@@ -18,7 +18,7 @@ const supabase = createClient(
 let aiSession: any = null
 
 // BM25-like reranking with doc_type weighting
-function rerankResults(query: string, results: SearchResult[]): SearchResult[] {
+function rerankResults(query: string, results: SearchResult[], limit: number): SearchResult[] {
   if (results.length <= 3) return results
 
   const stopWords = new Set(['what', 'how', 'why', 'when', 'where', 'which', 'who', 'is', 'are', 'the', 'a', 'an', 'for', 'to', 'in', 'on', 'at', 'do', 'does'])
@@ -41,14 +41,14 @@ function rerankResults(query: string, results: SearchResult[]): SearchResult[] {
     const normalizedTermScore = Math.min(termScore / (queryTerms.length * 6), 1.0)
     const baseScore = ((r.similarity || 0) * 0.4) + (normalizedTermScore * 0.6)
 
-    // Boost repos/models over blog articles
-    const docTypeBoost = (r.doc_type === 'hf_model' || r.doc_type === 'github_repo') ? 1.3 : 1.0
+    // Moderate boost for repos/models over blog articles (1.5x = 50% boost)
+    const docTypeBoost = (r.doc_type === 'hf_model' || r.doc_type === 'github_repo') ? 1.5 : 1.0
     const rerank_score = baseScore * completenessRatio * completenessRatio * docTypeBoost
 
     return { ...r, rerank_score }
   })
 
-  return scored.sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0)).slice(0, 5)
+  return scored.sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0)).slice(0, limit)
 }
 
 /**
@@ -60,12 +60,6 @@ export async function executeDataSource(
   const limit = query.params?.limit || 5
 
   switch (query.source) {
-    case 'keyword_search_models':
-      return await keywordSearchModels(query.params?.query || '', limit, query.params)
-
-    case 'keyword_search_repos':
-      return await keywordSearchRepos(query.params?.query || '', limit, query.params)
-
     case 'top_models_by_downloads':
       return await topModelsByDownloads(limit, query.params)
 
@@ -85,126 +79,72 @@ export async function executeDataSource(
 }
 
 /**
- * Keyword search for models using PostgreSQL full-text search
- */
-async function keywordSearchModels(
-  searchQuery: string,
-  limit: number,
-  params?: any
-): Promise<SearchResult[]> {
-  console.log(`🔍 Keyword search models: "${searchQuery}"`)
-
-  const { data, error } = await supabase.rpc('keyword_search_models', {
-    search_query: searchQuery,
-    query_limit: limit
-  })
-
-  if (error) {
-    console.error('❌ Keyword search models failed:', JSON.stringify(error, null, 2))
-    return []
-  }
-
-  // Parse JSONB response - keyword search functions return wrapped structure
-  const results = data?.results || []
-  console.log(`✅ Keyword search models returned ${results.length} results`)
-
-  return results.map((m: any) => ({
-    id: m.id,
-    name: m.name,
-    description: m.description || '',
-    url: m.url,
-    doc_type: 'hf_model' as const,
-    similarity: m.similarity || 1.0,
-    rerank_score: 1.0,
-    downloads: m.downloads,
-    likes: m.likes,
-    author: m.author,
-    rag_category: m.rag_category
-  }))
-}
-
-/**
- * Keyword search for repos using PostgreSQL full-text search
- */
-async function keywordSearchRepos(
-  searchQuery: string,
-  limit: number,
-  params?: any
-): Promise<SearchResult[]> {
-  console.log(`🔍 Keyword search repos: "${searchQuery}"`)
-
-  const { data, error } = await supabase.rpc('keyword_search_repos', {
-    search_query: searchQuery,
-    query_limit: limit
-  })
-
-  if (error) {
-    console.error('❌ Keyword search repos failed:', JSON.stringify(error, null, 2))
-    return []
-  }
-
-  // Parse JSONB response - keyword search functions return wrapped structure
-  const results = data?.results || []
-  console.log(`✅ Keyword search repos returned ${results.length} results`)
-
-  return results.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    description: r.description || '',
-    url: r.url,
-    doc_type: 'github_repo' as const,
-    similarity: r.similarity || 1.0,
-    rerank_score: 1.0,
-    stars: r.stars,
-    forks: r.forks,
-    owner: r.author,
-    language: r.language,
-    rag_category: r.rag_category
-  }))
-}
-
-/**
- * Get top models by downloads (simple ranking)
+ * Get top models by downloads using optimized market query
  */
 async function topModelsByDownloads(
   limit: number,
   params?: any
 ): Promise<SearchResult[]> {
-  console.log(`📊 Top models by downloads`)
+  console.log(`📊 Top models by downloads (using market query)`)
 
-  let query = supabase.from('hf_models').select('*')
+  const hasFilters = (params?.categories && params.categories.length > 0) ||
+                     (params?.authors && params.authors.length > 0)
 
-  // Filter by category if specified
-  if (params?.categories && params.categories.length > 0) {
-    query = query.in('rag_category', params.categories)
+  // Try with filters first if specified
+  if (hasFilters) {
+    let query = supabase.from('documents').select('*').eq('doc_type', 'hf_model')
+
+    if (params?.categories && params.categories.length > 0) {
+      query = query.in('rag_category', params.categories)
+    }
+
+    if (params?.authors && params.authors.length > 0) {
+      query = query.in('author', params.authors)
+    }
+
+    const { data, error } = await query
+      .not('downloads', 'is', null)
+      .order('downloads', { ascending: false })
+      .limit(limit)
+
+    if (!error && data && data.length > 0) {
+      return data.map(m => ({
+        id: m.id,
+        name: m.name,
+        description: m.description || '',
+        url: m.url,
+        doc_type: 'hf_model' as const,
+        similarity: 1.0,
+        rerank_score: 1.0,
+        downloads: m.downloads,
+        likes: m.likes,
+        ranking_position: m.ranking_position,
+        author: m.author,
+        task: m.task,
+        rag_category: m.rag_category
+      }))
+    }
+
+    console.log(`⚠️  No results with filters, falling back to unfiltered query`)
   }
 
-  // Filter by author if specified
-  if (params?.authors && params.authors.length > 0) {
-    query = query.in('author', params.authors)
-  }
-
-  const { data, error } = await query
-    .order('snapshot_date', { ascending: false })
+  // Fall back to unfiltered query
+  const { data, error } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('doc_type', 'hf_model')
+    .not('downloads', 'is', null)
     .order('downloads', { ascending: false })
-    .limit(limit * 4)
+    .limit(limit)
 
   if (error) {
     console.error('❌ Top models query failed:', error)
     return []
   }
 
-  // Deduplicate by model_name, keep latest snapshot
-  const seen = new Map()
-  const deduped = (data || []).filter(m => {
-    if (seen.has(m.model_name)) return false
-    seen.set(m.model_name, true)
-    return true
-  })
-
-  return deduped.slice(0, limit).map(m => ({
+  return (data || []).map(m => ({
     id: m.id,
-    name: m.model_name,
+    name: m.name,
     description: m.description || '',
     url: m.url,
     doc_type: 'hf_model' as const,
@@ -214,59 +154,77 @@ async function topModelsByDownloads(
     likes: m.likes,
     ranking_position: m.ranking_position,
     author: m.author,
+    task: m.task,
     rag_category: m.rag_category
   }))
 }
 
 /**
- * Get top repos by stars (simple ranking)
+ * Get top repos by stars using optimized market query
  */
 async function topReposByStars(
   limit: number,
   params?: any
 ): Promise<SearchResult[]> {
-  console.log(`📊 Top repos by stars`)
+  console.log(`📊 Top repos by stars (using market query)`)
 
-  let query = supabase.from('github_repos').select('*')
+  const hasFilters = (params?.categories && params.categories.length > 0) ||
+                     (params?.owners && params.owners.length > 0)
 
-  // Filter by category if specified
-  if (params?.categories && params.categories.length > 0) {
-    query = query.in('rag_category', params.categories)
+  // Try with filters first
+  if (hasFilters) {
+    let query = supabase.from('documents').select('*').eq('doc_type', 'github_repo')
+
+    if (params?.categories && params.categories.length > 0) {
+      query = query.in('rag_category', params.categories)
+    }
+
+    if (params?.owners && params.owners.length > 0) {
+      query = query.in('owner', params.owners)
+    }
+
+    const { data, error } = await query
+      .not('stars', 'is', null)
+      .order('stars', { ascending: false })
+      .limit(limit)
+
+    if (!error && data && data.length > 0) {
+      return data.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description || '',
+        url: r.url,
+        doc_type: 'github_repo' as const,
+        similarity: 1.0,
+        rerank_score: 1.0,
+        stars: r.stars,
+        forks: r.forks,
+        owner: r.owner,
+        language: r.language,
+        rag_category: r.rag_category
+      }))
+    }
+
+    console.log(`⚠️  No repos with filters, falling back to unfiltered`)
   }
 
-  // Filter by owner if specified
-  if (params?.owners && params.owners.length > 0) {
-    query = query.in('owner', params.owners)
-  }
-
-  const { data, error } = await query
-    .order('snapshot_date', { ascending: false })
+  // Fallback: unfiltered
+  const { data, error } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('doc_type', 'github_repo')
+    .not('stars', 'is', null)
     .order('stars', { ascending: false })
-    .limit(limit * 4)
-
+    .limit(limit)
 
   if (error) {
     console.error('❌ Top repos query failed:', JSON.stringify(error, null, 2))
     return []
   }
 
-  if (!data || data.length === 0) {
-    return []
-  }
-
-
-  // Deduplicate by repo_name, keep latest snapshot
-  const seen = new Map()
-  const deduped = (data || []).filter(r => {
-    if (seen.has(r.repo_name)) return false
-    seen.set(r.repo_name, true)
-    return true
-  })
-
-
-  return deduped.slice(0, limit).map(r => ({
+  return (data || []).map(r => ({
     id: r.id,
-    name: r.repo_name,
+    name: r.name,
     description: r.description || '',
     url: r.url,
     doc_type: 'github_repo' as const,
@@ -317,53 +275,8 @@ async function searchTrends(limit: number): Promise<SearchResult[]> {
 }
 
 /**
- * Enrich HuggingFace model with full metadata
- */
-async function enrichModel(modelName: string): Promise<Partial<SearchResult>> {
-  const { data, error } = await supabase
-    .from('hf_models')
-    .select('downloads, likes, ranking_position, author, rag_category')
-    .eq('model_name', modelName)
-    .order('snapshot_date', { ascending: false })
-    .limit(1)
-    .single()
-
-  if (error || !data) return {}
-
-  return {
-    downloads: data.downloads,
-    likes: data.likes,
-    ranking_position: data.ranking_position,
-    author: data.author,
-    rag_category: data.rag_category
-  }
-}
-
-/**
- * Enrich GitHub repo with full metadata
- */
-async function enrichRepo(repoName: string): Promise<Partial<SearchResult>> {
-  const { data, error } = await supabase
-    .from('github_repos')
-    .select('stars, forks, language, owner, rag_category')
-    .eq('repo_name', repoName)
-    .order('snapshot_date', { ascending: false })
-    .limit(1)
-    .single()
-
-  if (error || !data) return {}
-
-  return {
-    stars: data.stars,
-    forks: data.forks,
-    language: data.language,
-    owner: data.owner,
-    rag_category: data.rag_category
-  }
-}
-
-/**
- * Unified vector search (searches both ragnosis_docs and blog_docs)
+ * Unified vector search - single documents table with all metadata
+ * NO enrichment needed - metadata is already in the table!
  */
 async function vectorSearchUnified(
   searchQuery: string,
@@ -371,7 +284,7 @@ async function vectorSearchUnified(
 ): Promise<SearchResult[]> {
   console.log(`🔍 Unified vector search: "${searchQuery}"`)
 
-  // Generate embedding once
+  // Generate embedding
   let embedding: number[]
   try {
     if (!aiSession) {
@@ -388,90 +301,61 @@ async function vectorSearchUnified(
     return []
   }
 
-  // Search both tables in parallel (configurable allocation)
-  const [modelsReposData, blogsData] = await Promise.all([
-    supabase.rpc('match_documents', {
-      query_embedding: embedding,
-      match_count: config.search.modelRepoCandidates,
-      filter_doc_type: null,
-      filter_rag_category: null
-    }),
-    supabase.rpc('match_blog_docs', {
-      query_embedding: embedding,
-      match_count: config.search.blogCandidates,
-      filter_rag_topic: null,
-      filter_source: null
-    })
-  ])
+  // Search unified documents table - metadata included automatically!
+  const { data, error } = await supabase.rpc('match_documents', {
+    query_embedding: embedding,
+    match_count: config.search.candidateCount,  // Always fetch 100 candidates
+    filter_doc_type: null,
+    filter_rag_category: null
+  })
 
-  // Combine results from both tables
-  const modelsReposResults = modelsReposData.data || []
-  const blogsResults = blogsData.data || []
+  if (error) {
+    console.error('❌ Vector search failed:', JSON.stringify(error, null, 2))
+    return []
+  }
 
-  console.log(`📊 Found ${modelsReposResults.length} models/repos, ${blogsResults.length} blogs`)
+  const results = data || []
+  console.log(`📊 Found ${results.length} candidates from unified table`)
 
-  // Map models/repos results (from ragnosis_docs)
-  const modelsReposMapped: SearchResult[] = modelsReposResults.map((d: any) => ({
+  // Map results - all metadata is already here!
+  let mapped: SearchResult[] = results.map((d: any) => ({
     id: d.id,
     name: d.name || '',
     description: d.description || d.text?.substring(0, config.search.context.descriptionMax) || '',
     url: d.url,
-    doc_type: d.doc_type as 'hf_model' | 'github_repo',
+    doc_type: d.doc_type,
     similarity: d.similarity || 0,
     rerank_score: d.similarity || 0,
     rag_category: d.rag_category,
-    content: d.text
+    content: d.text,
+    // Metadata already included from documents table
+    downloads: d.downloads,
+    stars: d.stars,
+    likes: d.likes,
+    forks: d.forks,
+    ranking_position: d.ranking_position,
+    author: d.author,
+    owner: d.owner,
+    language: d.language,
+    task: d.task,
+    published_at: d.published_at,
+    content_source: d.content_source,
+    snapshot_date: d.snapshot_date
   }))
-
-  // Map blog results (from blog_docs)
-  const blogsMapped: SearchResult[] = blogsResults.map((d: any) => ({
-    id: d.id,
-    name: d.title || d.name || '',
-    description: d.content?.substring(0, config.search.context.descriptionMax) || d.description || '',
-    url: d.url,
-    doc_type: 'blog_article' as const,
-    similarity: d.similarity || 0,
-    rerank_score: d.similarity || 0,
-    content: d.content || d.text
-  }))
-
-  // Combine all results
-  let results: SearchResult[] = [...modelsReposMapped, ...blogsMapped]
 
   // Deduplicate by URL (keep highest similarity)
   const urlMap = new Map<string, SearchResult>()
-  results.forEach(r => {
+  mapped.forEach(r => {
     if (!urlMap.has(r.url) || (r.similarity || 0) > (urlMap.get(r.url)!.similarity || 0)) {
       urlMap.set(r.url, r)
     }
   })
-  results = Array.from(urlMap.values()).sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+  mapped = Array.from(urlMap.values()).sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
 
-  // Rerank with BM25 keyword matching to get top candidates
-  results = rerankResults(searchQuery, results)
+  // Rerank with BM25 keyword matching and return top limit results
+  const reranked = rerankResults(searchQuery, mapped, limit)
 
-  console.log(`✅ Unified search: ${results.length} results after dedup+rerank`)
+  console.log(`✅ Unified search complete: ${reranked.length} results from ${config.search.candidateCount} candidates`)
 
-  // Enrich top results based on doc_type (only enrich what we'll return)
-  const topResults = results.slice(0, limit)
-  const enrichedResults = await Promise.all(
-    topResults.map(async (result) => {
-      if (result.doc_type === 'hf_model') {
-        const enriched = await enrichModel(result.name)
-        console.log(`📊 Enriched model: ${result.name}`)
-        return { ...result, ...enriched }
-      }
-      if (result.doc_type === 'github_repo') {
-        const enriched = await enrichRepo(result.name)
-        console.log(`📊 Enriched repo: ${result.name}`)
-        return { ...result, ...enriched }
-      }
-      // blog_article and google_trend don't need enrichment
-      return result
-    })
-  )
-
-  console.log(`✅ Enrichment complete`)
-
-  return enrichedResults
+  return reranked
 }

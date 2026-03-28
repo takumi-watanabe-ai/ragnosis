@@ -33,15 +33,14 @@ export const config = {
 
   // Search and context configuration
   search: {
-    // Candidate allocation for vector search
-    blogCandidates: 10,           // From blog_docs (larger corpus)
-    modelRepoCandidates: 5,       // From ragnosis_docs (models + repos)
+    // Candidate fetching for reranking
+    candidateCount: 100,       // Always fetch 100 candidates for reranking
 
     // Context sizing (token-optimized)
     context: {
       primaryExcerpt: 200,     // Top 2 sources get full context
       secondaryExcerpt: 100,   // Sources 3-5 get minimal context
-      descriptionMax: 150,     // Model/repo descriptions
+      descriptionMax: 150,     // Description truncation
     },
   },
 
