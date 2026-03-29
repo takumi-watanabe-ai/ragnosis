@@ -203,6 +203,7 @@ Requirements:
       return `${baseRules}
 
 Requirements:
+- FIRST: Directly answer the user's specific question
 - Cover what, why, and how from sources
 - Use bullet points to organize key concepts
 - Synthesize across sources clearly`

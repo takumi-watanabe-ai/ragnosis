@@ -34,18 +34,19 @@ export const config = {
   // Search and context configuration
   search: {
     // Candidate fetching for reranking
-    candidateCount: 30,       // Fetch 30 candidates from each method (60 total for RRF)
+    candidateCount: 50,       // Fetch 50 candidates from each method (100 total for RRF)
 
-    // Stratified sampling configuration
-    enableStratifiedSampling: true,  // Set to false to disable diversity enforcement (pure RRF scoring)
+    // Final results to return (regardless of limit param)
+    finalResultCount: 20,     // Return top 20 after RRF fusion
 
-    // Boost for structured data (models/repos) to compensate for BM25 length penalty
-    structuredDataBoost: 0,
+    // Boost for structured data (models/repos)
+    // With full READMEs, content is balanced but structured data needs edge to compete
+    structuredDataBoost: 1.0,
 
     // Context sizing (token-optimized)
     context: {
-      primaryExcerpt: 200,     // Top 2 sources get full context
-      secondaryExcerpt: 100,   // Sources 3-5 get minimal context
+      primaryExcerpt: 400,     // Top 2 sources get full context
+      secondaryExcerpt: 150,   // Sources 3-20 get moderate context
       descriptionMax: 150,     // Description truncation
     },
   },

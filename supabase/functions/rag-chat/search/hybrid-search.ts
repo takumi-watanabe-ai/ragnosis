@@ -11,6 +11,7 @@ declare const Supabase: any
 
 interface SearchConfig {
   candidateCount: number
+  finalResultCount: number
   descriptionMax: number
   structuredDataBoost: number
 }
@@ -21,8 +22,7 @@ export class HybridSearch {
   constructor(
     private supabase: ReturnType<typeof createClient>,
     private config: SearchConfig,
-    private embeddingModel: string,
-    private enableStratifiedSampling: boolean = false
+    private embeddingModel: string
   ) {}
 
   /**
@@ -30,8 +30,7 @@ export class HybridSearch {
    */
   async search(
     query: string,
-    limit: number,
-    weights?: { blog: number; structured: number }
+    limit: number
   ): Promise<SearchResult[]> {
     console.log(`🔍 Hybrid search (k-NN + BM25): "${query}"`)
 
@@ -45,18 +44,11 @@ export class HybridSearch {
     console.log(`📊 Text search: ${textResults.length} results`)
 
     // Merge with Reciprocal Rank Fusion (RRF)
-    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount)
+    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2)
     console.log(`📊 Merged: ${merged.length} unique results`)
 
-    // Apply stratified sampling for diversity if enabled and weights provided
-    const final = (this.enableStratifiedSampling && weights)
-      ? this.stratifiedSample(merged, limit, weights)
-      : merged.slice(0, limit)
-
-    if (!this.enableStratifiedSampling && weights) {
-      console.log(`⚠️  Stratified sampling disabled - using pure RRF scores`)
-    }
-
+    // Return top N results by RRF score
+    const final = merged.slice(0, this.config.finalResultCount)
     console.log(`✅ Hybrid search complete: ${final.length} results`)
 
     return final
@@ -180,57 +172,6 @@ export class HybridSearch {
     })
 
     return Array.from(urlMap.values()).slice(0, limit)
-  }
-
-  /**
-   * Stratified sampling to ensure diversity across doc types
-   * Enforces target distribution between blog articles and structured data
-   */
-  private stratifiedSample(
-    results: SearchResult[],
-    targetCount: number,
-    weights: { blog: number; structured: number }
-  ): SearchResult[] {
-    // Separate by category
-    const blogs = results.filter(r => r.doc_type === 'blog_article')
-    const structured = results.filter(r => r.doc_type === 'hf_model' || r.doc_type === 'github_repo')
-
-    console.log(`📊 Pre-sampling: ${blogs.length} blogs, ${structured.length} structured`)
-
-    // Calculate quotas based on weights
-    const blogQuota = Math.round(targetCount * weights.blog)
-    const structuredQuota = Math.round(targetCount * weights.structured)
-
-    console.log(`📊 Quotas: ${blogQuota} blogs (${Math.round(weights.blog * 100)}%), ${structuredQuota} structured (${Math.round(weights.structured * 100)}%)`)
-
-    // Sample from each category (already sorted by RRF score)
-    const sampledBlogs = blogs.slice(0, blogQuota)
-    const sampledStructured = structured.slice(0, structuredQuota)
-
-    // Combine samples
-    let combined = [...sampledBlogs, ...sampledStructured]
-
-    // If we're short of target (due to insufficient results in one category), backfill from the other
-    if (combined.length < targetCount) {
-      const remaining = targetCount - combined.length
-      const leftoverBlogs = blogs.slice(blogQuota)
-      const leftoverStructured = structured.slice(structuredQuota)
-      const backfill = [...leftoverBlogs, ...leftoverStructured]
-        .sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0))
-        .slice(0, remaining)
-      combined.push(...backfill)
-    }
-
-    // Re-sort by RRF score to maintain relevance ordering
-    const final = combined
-      .sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0))
-      .slice(0, targetCount)
-
-    const finalBlogs = final.filter(r => r.doc_type === 'blog_article').length
-    const finalStructured = final.filter(r => r.doc_type === 'hf_model' || r.doc_type === 'github_repo').length
-    console.log(`📊 Final mix: ${finalBlogs} blogs, ${finalStructured} structured`)
-
-    return final
   }
 
   /**

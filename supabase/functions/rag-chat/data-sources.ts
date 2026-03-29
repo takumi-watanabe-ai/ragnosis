@@ -28,11 +28,11 @@ function getHybridSearch(): HybridSearch {
       supabase,
       {
         candidateCount: config.search.candidateCount,
+        finalResultCount: config.search.finalResultCount,
         descriptionMax: config.search.context.descriptionMax,
         structuredDataBoost: config.search.structuredDataBoost
       },
-      config.embedding.model,
-      config.search.enableStratifiedSampling
+      config.embedding.model
     )
   }
   return hybridSearch
@@ -65,8 +65,7 @@ export async function executeDataSource(
     case 'vector_search_unified':
       return await getHybridSearch().search(
         query.params?.query || '',
-        limit,
-        query.params?.weights
+        limit
       )
 
     default:
