@@ -65,103 +65,99 @@ class HFModelFetcher:
         self.api_token = api_token
         self.hf_api = HfApi(token=api_token)
 
-    def fetch_top_models(
+    def fetch_by_tags(
         self,
-        max_models: int = 200,
-        sort_by: str = "downloads"
+        max_per_tag: int = 50,
+        min_downloads: int = 100,
     ) -> List[HFModel]:
         """
-        Fetch top models OVERALL (not filtered).
-
-        This gives us:
-        - Absolute rankings (e.g., "model X is #47 overall")
-        - RAG market share (e.g., "12% of top 200 are RAG models")
-        - Trend tracking (ranking changes over time)
-
+        Fetch models using TARGETED tag-based search.
+        
+        This captures:
+        - High-quality models regardless of absolute ranking
+        - Specialized models (rerankers, embeddings) that may have lower downloads
+        - Better coverage of RAG ecosystem niches
+        
         Args:
-            max_models: How many top models to fetch (recommended: 200-500)
-            sort_by: 'downloads' (most popular), 'likes' (most liked),
-                     or 'lastModified' (recently updated)
-
+            max_per_tag: Max models to fetch per tag (recommended: 30-100)
+            min_downloads: Minimum downloads threshold for quality
+            
         Returns:
-            List of all top models with RAG classification
+            Deduplicated list of RAG models from targeted searches
         """
-        logger.info(f"📥 Fetching top {max_models} models (sort: {sort_by})...")
-        logger.info("   This provides ranking context for RAG market share analysis")
-
-        models = []
-
+        from rag_taxonomy import RAG_TAXONOMY
+        
+        logger.info(f"📥 Fetching models via targeted tag search...")
+        logger.info(f"   Max per tag: {max_per_tag}, Min downloads: {min_downloads}")
+        
+        seen_ids = set()
+        all_models = []
+        ranking_position = 1
+        
         try:
-            # Use HuggingFace Hub API to fetch models with full metadata
-            logger.info("   Using HuggingFace Hub API for richer model data...")
-
-            model_infos = list(self.hf_api.list_models(
-                sort=sort_by,
-                direction=-1,
-                limit=max_models,
-                full=True,  # Get full model info including card data
-            ))
-
-            logger.info(f"   Fetched {len(model_infos)} models from Hub API")
-
-            for idx, model_info in enumerate(model_infos):
-                if len(models) >= max_models:
-                    break
-
-                model = self._parse_model_info(model_info, ranking_position=idx + 1)
-
-                if model and self._is_valid_model(model):
-                    models.append(model)
-
-                    rag_indicator = "🎯" if model.is_rag_related else "  "
-                    logger.info(
-                        f"{rag_indicator} #{model.ranking_position:3d} {model.model_name} "
-                        f"({model.downloads:,} downloads)"
-                    )
-
-            logger.info(f"\n✅ Fetched {len(models)} models")
-            return models
-
+            # Search by each category's tags
+            for category_id, config in RAG_TAXONOMY.items():
+                logger.info(f"\n🔍 Searching category: {config['name']}")
+                
+                for tag in config["hf_tags"]:
+                    logger.info(f"   Tag: {tag}")
+                    
+                    try:
+                        # Search with specific tag filter
+                        model_infos = list(self.hf_api.list_models(
+                            filter=tag,
+                            sort="downloads",
+                            direction=-1,
+                            limit=max_per_tag,
+                            full=True,
+                        ))
+                        
+                        for model_info in model_infos:
+                            model_id = model_info.id
+                            
+                            # Skip duplicates
+                            if model_id in seen_ids:
+                                continue
+                                
+                            # Check minimum quality threshold
+                            downloads = getattr(model_info, 'downloads', 0) or 0
+                            if downloads < min_downloads:
+                                continue
+                            
+                            model = self._parse_model_info(
+                                model_info, 
+                                ranking_position=ranking_position
+                            )
+                            
+                            if model and self._is_valid_model(model):
+                                all_models.append(model)
+                                seen_ids.add(model_id)
+                                ranking_position += 1
+                                
+                                logger.info(
+                                    f"      ✓ {model.model_name} "
+                                    f"({model.downloads:,} downloads)"
+                                )
+                                
+                    except Exception as e:
+                        logger.debug(f"   Error fetching tag '{tag}': {e}")
+                        continue
+                        
+            # Sort by downloads for final ranking
+            all_models.sort(key=lambda m: m.downloads, reverse=True)
+            
+            # Update ranking positions after sort
+            for idx, model in enumerate(all_models):
+                model.ranking_position = idx + 1
+                
+            logger.info(f"\n✅ Fetched {len(all_models)} unique models via tag search")
+            logger.info(f"   Covered {len(RAG_TAXONOMY)} categories")
+            
+            return all_models
+            
         except Exception as e:
-            logger.error(f"❌ Failed to fetch models: {e}")
+            logger.error(f"❌ Failed to fetch models by tags: {e}")
             return []
-
-    def _fetch_model_description(self, model_id: str) -> str:
-        """Fetch model description from model card."""
-        try:
-            # Try to get description from card_data first (faster)
-            card = ModelCard.load(model_id)
-
-            # Try card_data summary or base_model
-            if card.data:
-                # Check for common description fields
-                if hasattr(card.data, 'summary') and card.data.summary:
-                    return card.data.summary
-                if hasattr(card.data, 'description') and card.data.description:
-                    return card.data.description
-
-            # Fall back to extracting first paragraph from README
-            if card.text:
-                # Get first meaningful paragraph (skip headers, skip empty lines)
-                lines = card.text.split('\n')
-                description_lines = []
-                for line in lines:
-                    line = line.strip()
-                    # Skip markdown headers, yaml frontmatter, empty lines
-                    if line and not line.startswith('#') and not line.startswith('---'):
-                        description_lines.append(line)
-                        # Get first ~200 chars of meaningful content
-                        if len(' '.join(description_lines)) > 200:
-                            break
-
-                if description_lines:
-                    return ' '.join(description_lines)[:500]  # Limit length
-
-            return ""
-
-        except Exception as e:
-            logger.debug(f"Could not fetch description for {model_id}: {e}")
-            return ""
 
     def _parse_model_info(self, model_info, ranking_position: int) -> Optional[HFModel]:
         """Parse ModelInfo object from Hub API and classify if RAG-related."""
@@ -262,92 +258,3 @@ class HFModelFetcher:
         if model.downloads < 10:
             return False
         return True
-
-    def save_models(self, models: List[HFModel], filename: str = "hf_models.json"):
-        """Save models to JSON file."""
-        filepath = self.output_dir / filename
-        models_dict = [asdict(model) for model in models]
-
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(models_dict, f, indent=2, ensure_ascii=False)
-
-        logger.info(f"💾 Saved {len(models)} models to {filepath}")
-        return filepath
-
-    def analyze_market_share(self, models: List[HFModel]) -> Dict:
-        """Analyze RAG market share and rankings."""
-        total = len(models)
-        rag_models = [m for m in models if m.is_rag_related]
-
-        # Category breakdown
-        categories = {}
-        for model in rag_models:
-            cat = model.rag_category or "unknown"
-            categories[cat] = categories.get(cat, 0) + 1
-
-        # Top RAG models
-        top_rag = sorted(rag_models, key=lambda m: m.ranking_position)[:10]
-
-        # Market share percentage
-        market_share_pct = (len(rag_models) / total * 100) if total > 0 else 0
-
-        return {
-            "total_models": total,
-            "rag_models_count": len(rag_models),
-            "market_share_pct": market_share_pct,
-            "categories": categories,
-            "top_rag_models": [
-                {
-                    "rank": m.ranking_position,
-                    "name": m.model_name,
-                    "category": m.rag_category,
-                    "downloads": m.downloads
-                }
-                for m in top_rag
-            ]
-        }
-
-
-def main():
-    """Main entry point for HF fetcher (for testing only - use pipeline.py for production)."""
-    import os
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    api_token = os.getenv("HUGGINGFACE_API_KEY")
-    if api_token:
-        logger.info("✓ Using HuggingFace API token")
-    else:
-        logger.info("⚠️  No HF API token found (rate limits may apply)")
-
-    fetcher = HFModelFetcher(api_token=api_token)
-    models = fetcher.fetch_top_models(max_models=200, sort_by="downloads")
-
-    if models:
-        analysis = fetcher.analyze_market_share(models)
-
-        # Display results
-        logger.info("\n" + "="*60)
-        logger.info("📊 RAG/LLM MARKET SHARE ANALYSIS")
-        logger.info("="*60)
-        logger.info(f"Total models analyzed: {analysis['total_models']}")
-        logger.info(f"RAG-related models: {analysis['rag_models_count']} ({analysis['market_share_pct']:.1f}%)")
-
-        logger.info("\n📋 Category breakdown:")
-        for category, count in sorted(analysis['categories'].items(), key=lambda x: x[1], reverse=True):
-            logger.info(f"  {category}: {count}")
-
-        logger.info("\n🏆 Top 10 RAG models (by overall ranking):")
-        for model in analysis['top_rag_models']:
-            logger.info(f"  #{model['rank']:3d} {model['name']}")
-            logger.info(f"       Category: {model['category']} | Downloads: {model['downloads']:,}")
-
-        logger.info("="*60 + "\n")
-        logger.info("✅ Fetch complete! Use pipeline.py to insert to database.")
-    else:
-        logger.error("❌ No models fetched.")
-
-
-if __name__ == "__main__":
-    main()

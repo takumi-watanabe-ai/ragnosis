@@ -22,7 +22,7 @@ load_dotenv()
 def main():
     """Run the complete data pipeline."""
     logger.info("=" * 60)
-    logger.info("🚀 STARTING RAG DATA PIPELINE")
+    logger.info("🚀 STARTING RAG DATA PIPELINE (Tag-Driven)")
     logger.info("=" * 60)
 
     # Get credentials
@@ -39,14 +39,21 @@ def main():
     snapshot_date = date.today().isoformat()
 
     # ========================================
-    # STEP 1: Fetch HuggingFace Models
+    # STEP 1: Fetch HuggingFace Models (Tag-Driven)
     # ========================================
-    logger.info("\n📥 STEP 1: Fetching HuggingFace models...")
+    logger.info("\n📥 STEP 1: Fetching HuggingFace models (tag-driven)...")
     hf_fetcher = HFModelFetcher(api_token=hf_token)
-    models = hf_fetcher.fetch_top_models(max_models=200, sort_by="downloads")
+    
+    # NEW: Use targeted tag-based search
+    models = hf_fetcher.fetch_by_tags(
+        max_per_tag=50,  # 50 models per tag
+        min_downloads=100  # Quality threshold
+    )
+    
+    # All models from tag search are RAG-related
     rag_models = [m for m in models if m.is_rag_related]
 
-    logger.info(f"   Found {len(rag_models)} RAG models (out of {len(models)} total)")
+    logger.info(f"   Found {len(rag_models)} RAG models via targeted search")
 
     if rag_models:
         rows = [
@@ -71,14 +78,21 @@ def main():
         logger.info(f"   ✅ Inserted {len(rows)} models")
 
     # ========================================
-    # STEP 2: Fetch GitHub Repos
+    # STEP 2: Fetch GitHub Repos (Topic-Driven)
     # ========================================
-    logger.info("\n📥 STEP 2: Fetching GitHub repos...")
+    logger.info("\n📥 STEP 2: Fetching GitHub repos (topic-driven)...")
     gh_fetcher = GitHubFetcher(api_token=gh_token)
-    repos = gh_fetcher.fetch_top_repos(max_repos=300)  # Increased for better RAG coverage
+    
+    # NEW: Use targeted topic-based search
+    repos = gh_fetcher.fetch_by_topics(
+        max_per_topic=30,  # 30 repos per topic
+        min_stars=100  # Quality threshold
+    )
+    
+    # All repos from topic search are RAG-related
     rag_repos = [r for r in repos if r.is_rag_related]
 
-    logger.info(f"   Found {len(rag_repos)} RAG repos (out of {len(repos)} total)")
+    logger.info(f"   Found {len(rag_repos)} RAG repos via targeted search")
 
     if rag_repos:
         rows = [
@@ -108,10 +122,15 @@ def main():
     # Summary
     # ========================================
     logger.info("\n" + "=" * 60)
-    logger.info("✅ DAILY DATA COLLECTION COMPLETE")
+    logger.info("✅ TAG-DRIVEN DATA COLLECTION COMPLETE")
     logger.info("=" * 60)
     logger.info(f"   📊 HF Models: {len(rag_models)}")
     logger.info(f"   📊 GitHub Repos: {len(rag_repos)}")
+    logger.info("=" * 60)
+    logger.info("💡 Benefits of tag-driven approach:")
+    logger.info("   • Captures high-quality low-download models")
+    logger.info("   • Better coverage of specialized tools (rerankers)")
+    logger.info("   • More consistent category distribution")
     logger.info("=" * 60)
     logger.info("💡 Next steps:")
     logger.info("   1. Run 'make embed' to create vector embeddings")

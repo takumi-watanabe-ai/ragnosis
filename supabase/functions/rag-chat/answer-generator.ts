@@ -5,6 +5,7 @@
 
 import type { SearchResult, QueryIntent } from './types.ts'
 import { config } from './config.ts'
+import { verifyAnswer } from './answer-verifier.ts'
 
 /**
  * Generate answer from search results
@@ -43,7 +44,22 @@ export async function generateAnswer(
     }
 
     const data = await response.json()
-    return data.response.trim()
+    let answer = data.response.trim()
+
+    // Answer verification if enabled
+    if (config.features.answerVerification.enabled) {
+      const verification = await verifyAnswer(answer, results)
+
+      // Only use verified answer if faithfulness is acceptable
+      if (verification.faithfulnessScore >= config.features.answerVerification.minFaithfulness) {
+        answer = verification.verifiedAnswer
+        console.log(`✅ Using verified answer (faithfulness: ${verification.faithfulnessScore.toFixed(2)})`)
+      } else {
+        console.log(`⚠️ Verification faithfulness too low (${verification.faithfulnessScore.toFixed(2)}), using original`)
+      }
+    }
+
+    return answer
   } catch (error) {
     console.error('❌ Answer generation failed:', error)
     return 'Sorry, I encountered an error generating the answer. Please try again.'
@@ -116,7 +132,8 @@ function buildAnswerPrompt(query: string, results: SearchResult[], intent: Query
       if (item.language) context += `   Language: ${item.language}\n`
     } else if (item.doc_type === 'google_trend') {
       if (item.current_interest) context += `   Current Interest: ${item.current_interest}%\n`
-      if (item.trend_direction) context += `   Trend: ${item.trend_direction}\n`
+      if (item.avg_interest) context += `   Average Interest: ${item.avg_interest.toFixed(1)}%\n`
+      if (item.peak_interest) context += `   Peak Interest: ${item.peak_interest}%\n`
     } else if (item.doc_type === 'blog_article') {
       // Smart context allocation: top 2 sources get more context
       if (item.content) {
@@ -151,52 +168,68 @@ Answer:`
  * Get instructions based on query intent
  */
 function getInstructionsByIntent(intent: QueryIntent): string {
-  const baseRules = `You are a RAG/ML expert. Answer STRICTLY using ONLY the sources above.
+  const baseRules = `You are a RAG/ML expert assistant. Answer STRICTLY using ONLY the sources provided above.
 
-LENGTH: Max limit ${config.llm.answer.targetWords} words. Be complete but concise.
+**CRITICAL ANTI-HALLUCINATION RULES:**
+1. ONLY use information EXPLICITLY stated in the provided SOURCES
+2. DO NOT invent, guess, or use external knowledge — not even well-known facts
+3. NEVER cite sources that don't exist in the provided context
+
+LENGTH: Answer can never exceed ${config.llm.answer.targetWords} words. Be complete but concise.
 
 FORMATTING:
 - ALWAYS reference sources inline as clickable links: **[Name](url)**
 - Use bullet points for lists
-- Structure with line breaks
-
-GROUNDING RULES:
-- Use ONLY information explicitly shown in SOURCES
-- Every fact MUST come from the provided sources
-- Never use your training knowledge or make assumptions`
+- Structure with line breaks for readability`
 
   switch (intent) {
     case 'market_intelligence':
       return `${baseRules}
 
+ANSWER APPROACH:
+- FIRST: Directly answer the user's specific question
+- Then provide supporting details from sources
+
 Requirements:
 - Match source types (models → HuggingFace, repos → GitHub)
-- Include ALL metrics (downloads/likes/stars/forks)
+- Include ALL metrics (downloads/likes/stars/forks) from sources only
 - Use bullet points for multiple items`
 
     case 'implementation':
       return `${baseRules}
 
+ANSWER APPROACH:
+- FIRST: Directly answer the user's specific question
+- Then provide step-by-step implementation from sources
+
 Requirements:
-- Step-by-step guidance with parameters
-- Explain what to do AND why
+- Step-by-step guidance with parameters from sources only
+- Explain what to do AND why based on sources
 - Use bullet points for steps`
 
     case 'troubleshooting':
       return `${baseRules}
 
+ANSWER APPROACH:
+- FIRST: Directly answer what's causing the issue
+- Then provide solutions from sources
+
 Requirements:
-- Explain root causes clearly
-- List ALL solutions from sources
+- Explain root causes based only on sources
+- List ALL solutions found in sources
 - Use bullet points for multiple solutions`
 
     case 'comparison':
       return `${baseRules}
 
+ANSWER APPROACH:
+- FIRST: Directly state the key differences
+- Then elaborate with details from sources
+
 Requirements:
-- Compare with features and use cases
+- Compare using only features/use cases from sources
 - Use table for 3+ items, bullets for 2 items
-- Provide "Use X if..." guidance`
+- Provide "Use X if..." guidance based on sources only`
 
     case 'conceptual':
     default:

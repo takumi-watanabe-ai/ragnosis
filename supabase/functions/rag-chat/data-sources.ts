@@ -10,6 +10,7 @@ import { HybridSearch } from './search/hybrid-search.ts'
 import { ModelsRepository } from './sources/models-repository.ts'
 import { ReposRepository } from './sources/repos-repository.ts'
 import { TrendsRepository } from './sources/trends-repository.ts'
+import { expandQuery } from './query-expander.ts'
 
 const supabase = createClient(
   config.database.url,
@@ -62,11 +63,37 @@ export async function executeDataSource(
     case 'search_trends':
       return await new TrendsRepository(supabase).getTopTrends(limit)
 
-    case 'vector_search_unified':
-      return await getHybridSearch().search(
-        query.params?.query || '',
-        limit
-      )
+    case 'vector_search_unified': {
+      const originalQuery = query.params?.query || ''
+
+      // Query expansion if enabled
+      if (config.features.queryExpansion.enabled) {
+        const queries = await expandQuery(originalQuery)
+        console.log(`🔄 Searching with ${queries.length} query variations`)
+
+        // Search with all query variations in parallel
+        const allResults = await Promise.all(
+          queries.map(q => getHybridSearch().search(q, limit))
+        )
+
+        // Merge and deduplicate by URL, keeping highest score
+        const urlMap = new Map<string, SearchResult>()
+        allResults.flat().forEach(result => {
+          const existing = urlMap.get(result.url)
+          if (!existing || (result.similarity || 0) > (existing.similarity || 0)) {
+            urlMap.set(result.url, result)
+          }
+        })
+
+        // Return top results sorted by similarity
+        return Array.from(urlMap.values())
+          .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+          .slice(0, limit)
+      }
+
+      // Default: single query search
+      return await getHybridSearch().search(originalQuery, limit)
+    }
 
     default:
       console.error(`Unknown data source: ${query.source}`)

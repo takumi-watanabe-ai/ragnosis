@@ -17,71 +17,38 @@ export class ModelsRepository {
    * Get top models by downloads with optional filters
    */
   async getTopByDownloads(limit: number, filters?: ModelsFilters): Promise<SearchResult[]> {
-    console.log(`📊 Top models by downloads (using market query)`)
+    console.log(`📊 Top models by downloads`)
 
-    const hasFilters = (filters?.categories && filters.categories.length > 0) ||
-                       (filters?.authors && filters.authors.length > 0)
+    // Try with filters if provided
+    const category = filters?.categories?.[0] || null
+    const author = filters?.authors?.[0] || null
+    const results = await this.query(limit, category, author)
 
-    // Try with filters first if specified
-    if (hasFilters) {
-      const results = await this.queryWithFilters(limit, filters!)
-      if (results.length > 0) {
-        return results
-      }
+    // Fallback if filtered query returned nothing
+    if (results.length === 0 && (category || author)) {
       console.log(`⚠️  No results with filters, falling back to unfiltered query`)
+      return await this.query(limit, null, null)
     }
 
-    // Fall back to unfiltered query
-    return await this.queryUnfiltered(limit)
+    return results
   }
 
   /**
-   * Query with category and author filters
+   * Query top models using get_top_models RPC function
    */
-  private async queryWithFilters(limit: number, filters: ModelsFilters): Promise<SearchResult[]> {
-    let query = this.supabase
-      .from('documents')
-      .select('*')
-      .eq('doc_type', 'hf_model')
-
-    if (filters.categories && filters.categories.length > 0) {
-      query = query.in('rag_category', filters.categories)
-    }
-
-    if (filters.authors && filters.authors.length > 0) {
-      query = query.in('author', filters.authors)
-    }
-
-    const { data, error } = await query
-      .not('downloads', 'is', null)
-      .order('downloads', { ascending: false })
-      .limit(limit)
-
-    if (error || !data || data.length === 0) {
-      return []
-    }
-
-    return data.map(m => this.mapToSearchResult(m))
-  }
-
-  /**
-   * Query without filters
-   */
-  private async queryUnfiltered(limit: number): Promise<SearchResult[]> {
-    const { data, error } = await this.supabase
-      .from('documents')
-      .select('*')
-      .eq('doc_type', 'hf_model')
-      .not('downloads', 'is', null)
-      .order('downloads', { ascending: false })
-      .limit(limit)
+  private async query(limit: number, category: string | null, author: string | null): Promise<SearchResult[]> {
+    const { data, error } = await this.supabase.rpc('get_top_models', {
+      match_limit: limit,
+      filter_category: category,
+      filter_author: author
+    })
 
     if (error) {
       console.error('❌ Top models query failed:', error)
       return []
     }
 
-    return (data || []).map(m => this.mapToSearchResult(m))
+    return (data || []).map((m: any) => this.mapToSearchResult(m))
   }
 
   /**

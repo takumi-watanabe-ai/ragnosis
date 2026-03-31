@@ -123,55 +123,128 @@ def main():
 
     # Sidebar
     with st.sidebar:
-        st.header("💡 Example Questions")
-        st.caption("Click any question to try it")
+        st.header("💡 Test Queries")
+        st.caption("Click to test query planner")
 
-        # Market Intelligence
-        st.markdown("**📊 Market Intelligence**")
-        example_questions_market = [
-            "What are the top embedding models?",
-            "Most popular RAG frameworks",
-            "Best reranking models",
-            "Top vector databases by popularity",
-            "RAG trends over time"
-        ]
+        # Ranking: Embedding Models
+        with st.expander("🔢 Embeddings (models)", expanded=False):
+            queries = [
+                "top embedding models",
+                "best open source embedding model",
+                "best embedding model for beginners",
+                "Which embedding model works best for code documentation?",
+                "lightweight embedding models for edge deployment",
+                "What embedding models support multilingual content?"
+            ]
+            for q in queries:
+                if st.button(q, key=f"embed_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        for q in example_questions_market:
-            if st.button(q, key=f"market_{q}", use_container_width=True):
-                st.session_state.clicked_question = q
+        # Ranking: Vector Databases
+        with st.expander("🗄️ Vector DBs (repos)", expanded=False):
+            queries = [
+                "Top vector databases by popularity",
+                "What are the most popular vector databases?",
+                "best vector database for small projects",
+                "I'm looking for a vector database that can handle 10M documents",
+                "What's the best vector database for small projects?"
+            ]
+            for q in queries:
+                if st.button(q, key=f"vdb_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        st.divider()
+        # Ranking: RAG Frameworks
+        with st.expander("🔧 RAG Frameworks (repos)", expanded=False):
+            queries = [
+                "Most popular RAG frameworks",
+                "What are the top RAG frameworks on GitHub?",
+                "Are there any good RAG frameworks for Python?",
+                "What are trending RAG frameworks?",
+                "best RAG framework for beginners"
+            ]
+            for q in queries:
+                if st.button(q, key=f"rag_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        # Implementation & Troubleshooting
-        st.markdown("**🛠️ Implementation Help**")
-        example_questions_impl = [
-            "How to fix chunking errors in RAG?",
-            "How to improve retrieval accuracy?",
-            "Guide to choosing vector databases",
-            "Best practices for RAG deployment",
-            "What are similar tools like RAGAS?",
-            "How to implement hybrid search?",
-            "Reranking vs embedding models"
-        ]
+        # Ranking: Rerankers
+        with st.expander("🎯 Reranking (models)", expanded=False):
+            queries = [
+                "Best reranking models for RAG",
+                "top reranking models",
+                "reranker recommendations"
+            ]
+            for q in queries:
+                if st.button(q, key=f"rerank_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        for q in example_questions_impl:
-            if st.button(q, key=f"impl_{q}", use_container_width=True):
-                st.session_state.clicked_question = q
+        # Ranking: Agent Frameworks
+        with st.expander("🤖 Agents (repos)", expanded=False):
+            queries = [
+                "top agent frameworks",
+                "best agent frameworks on GitHub",
+                "popular agentic frameworks"
+            ]
+            for q in queries:
+                if st.button(q, key=f"agent_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        st.divider()
+        # Comparisons
+        with st.expander("⚖️ Comparisons", expanded=False):
+            queries = [
+                "langchain vs llamaindex",
+                "chromadb vs pinecone vs weaviate",
+                "Pinecone vs pgvector",
+                "OpenAI embeddings vs open source alternatives",
+                "RAG vs fine-tuning",
+                "Supabase/gte-small vs OpenAI embeddings",
+                "Cohere rerank vs cross-encoder models"
+            ]
+            for q in queries:
+                if st.button(q, key=f"cmp_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        # Comparison Queries
-        st.markdown("**⚖️ Comparisons**")
-        example_questions_compare = [
-            "LangChain vs LlamaIndex",
-            "Pinecone vs Weaviate vs Qdrant",
-            "OpenAI embeddings vs open source",
-            "RAG vs fine-tuning"
-        ]
+        # Semantic/How-to
+        with st.expander("🔍 How-to & Concepts", expanded=False):
+            queries = [
+                "What is RAG?",
+                "How does RAG work?",
+                "How do I improve retrieval accuracy?",
+                "What's the best chunking strategy for RAG?",
+                "How to implement hybrid search?",
+                "How to prevent hallucinations in RAG?",
+                "Do I need a vector database for RAG?",
+                "How to handle long documents in RAG?",
+                "What chunk size should I use for technical documentation?"
+            ]
+            for q in queries:
+                if st.button(q, key=f"how_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
-        for q in example_questions_compare:
-            if st.button(q, key=f"compare_{q}", use_container_width=True):
-                st.session_state.clicked_question = q
+        # Troubleshooting
+        with st.expander("🔧 Troubleshooting", expanded=False):
+            queries = [
+                "why is my RAG returning duplicate results",
+                "My RAG system returns irrelevant results - how do I fix this?",
+                "Getting timeout errors on large document searches",
+                "My reranker is making results worse, not better",
+                "help! my rag is hallucinating like crazy"
+            ]
+            for q in queries:
+                if st.button(q, key=f"trouble_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
+
+        # Trends
+        with st.expander("📈 Trends & Market", expanded=False):
+            queries = [
+                "What are the top RAG frameworks on GitHub?",
+                "Which embedding models are growing in popularity?",
+                "What's the most downloaded RAG library on HuggingFace?",
+                "What's trending in RAG right now?",
+                "Are there any new vector databases I should know about?"
+            ]
+            for q in queries:
+                if st.button(q, key=f"trend_{hash(q)}", use_container_width=True):
+                    st.session_state.clicked_question = q
 
         st.divider()
 
@@ -217,6 +290,19 @@ def main():
 
         # Rerun to display the new messages
         st.rerun()
+
+    # Auto-scroll to bottom when there are messages
+    if st.session_state.messages:
+        st.markdown(
+            """
+            <script>
+                setTimeout(function() {
+                    window.scrollTo(0, document.body.scrollHeight);
+                }, 100);
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
 
     # Display chat history
     for message in st.session_state.messages:

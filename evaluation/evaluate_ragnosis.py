@@ -1,31 +1,22 @@
 #!/usr/bin/env python3
 """
-RAGnosis RAGAS Evaluation Script
+RAGnosis RAGAS Evaluation Script v2
 
-Evaluates the RAGnosis Edge Function using RAGAS metrics:
-- Faithfulness: How grounded the answer is in the retrieved context
-- Answer Relevancy: How relevant the answer is to the question
-- Context Precision: Precision of retrieved context
-- Context Recall: How much of the ground truth is captured in context
+Evaluates RAGnosis using 4 core RAGAS metrics:
+1. Faithfulness - Answer grounded in retrieved context (anti-hallucination)
+2. Answer Relevance - Addresses the query
+3. Context Precision - Retrieved docs are relevant
+4. Answer Correctness - Factually accurate vs ground truth
 
 Usage:
-    # Evaluate using golden dataset
     python evaluate_ragnosis.py
-
-    # Limit number of samples for quick testing
     python evaluate_ragnosis.py --max_samples 10
-
-    # Use specific LLM model for RAGAS evaluation
-    python evaluate_ragnosis.py --llm_model qwen2.5:7b-instruct
-
-    # Save detailed predictions
     python evaluate_ragnosis.py --save_predictions
 """
 
 import argparse
 import json
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -43,14 +34,12 @@ from datasets import Dataset
 from ragas import evaluate
 import warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
-warnings.filterwarnings('ignore', message='.*EmbeddingUsageEvent.*')
-warnings.filterwarnings('ignore', message='.*ValidationError.*')
 
 from ragas.metrics import (
     faithfulness,
     answer_relevancy,
     context_precision,
-    context_recall,
+    answer_correctness,
 )
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import FastEmbedEmbeddings
@@ -66,11 +55,11 @@ DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct")
 DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 DEFAULT_GOLDEN_DATA = "golden_data/golden_dataset.jsonl"
 DEFAULT_OUTPUT_DIR = "results"
-DEFAULT_TIMEOUT = 60  # seconds
+DEFAULT_TIMEOUT = 60
 
 
 class RAGnosisEvaluator:
-    """Evaluator for RAGnosis Edge Function using RAGAS."""
+    """Evaluator for RAGnosis using RAGAS metrics."""
 
     def __init__(
         self,
@@ -80,41 +69,32 @@ class RAGnosisEvaluator:
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         timeout: int = DEFAULT_TIMEOUT,
     ):
-        """Initialize evaluator."""
         self.edge_function_url = edge_function_url
         self.llm_model = llm_model
         self.llm_base_url = llm_base_url
         self.embedding_model = embedding_model
         self.timeout = timeout
 
-        print(f"🎯 RAGnosis Evaluator")
+        print(f"🎯 RAGnosis Evaluator v2")
         print(f"🌐 Edge Function: {self.edge_function_url}")
         print(f"🤖 LLM: {self.llm_model} @ {self.llm_base_url}")
         print(f"📦 Embeddings: {self.embedding_model}")
-        print(f"⏱️  Timeout: {self.timeout}s")
 
-        # Initialize RAGAS models
-        print("\n📊 Initializing RAGAS evaluator...")
+        print("\n📊 Initializing RAGAS...")
         self._setup_ragas_models()
 
     def _setup_ragas_models(self):
-        """Setup LLM and embedding models for RAGAS evaluation."""
-        # LLM for RAGAS metrics (using local Ollama)
+        """Setup LLM and embeddings for RAGAS."""
         self.ragas_llm = ChatOllama(
             model=self.llm_model,
             base_url=self.llm_base_url,
             temperature=0.1,
-            timeout=300,  # 5 minutes for RAGAS evaluation
+            timeout=300,
             num_ctx=8192,
             num_predict=2048,
-            repeat_penalty=1.1,
-            top_p=0.9,
-            top_k=40,
         )
 
-        # FastEmbed wrapper with model name for telemetry
         from langchain_core.embeddings import Embeddings
-
         base_embeddings = FastEmbedEmbeddings(
             model_name=self.embedding_model,
             cache_dir=os.getenv("FASTEMBED_CACHE_PATH", None),
@@ -132,32 +112,38 @@ class RAGnosisEvaluator:
                 return self._base.embed_query(text)
 
         self.ragas_embeddings = SafeFastEmbeddings(base_embeddings, self.embedding_model)
-        print(f"✅ RAGAS models initialized")
+        print(f"✅ RAGAS initialized")
 
     def load_golden_dataset(
         self,
         filepath: str = DEFAULT_GOLDEN_DATA,
         max_samples: Optional[int] = None,
-        offset: int = 0
+        offset: int = 0,
+        filter_category: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Load golden dataset from JSONL file with range support."""
-        questions = []
-
+        """Load golden dataset from JSONL."""
+        all_questions = []
         with open(filepath, "r", encoding="utf-8") as f:
-            for idx, line in enumerate(f):
-                # Skip offset items
-                if idx < offset:
-                    continue
+            for line in f:
+                all_questions.append(json.loads(line))
 
-                data = json.loads(line)
-                questions.append(data)
+        # Filter by category if specified
+        if filter_category:
+            questions = [q for q in all_questions if q.get("category") == filter_category]
+            print(f"\n📂 Filtered to category '{filter_category}': {len(questions)} questions")
+        else:
+            questions = all_questions
 
-                # Check max_samples after offset
-                if max_samples and len(questions) >= max_samples:
-                    break
+        # Apply offset and limit
+        if offset > 0:
+            questions = questions[offset:]
+        if max_samples:
+            questions = questions[:max_samples]
 
         range_str = f" [questions {offset+1}-{offset+len(questions)}]" if offset > 0 or max_samples else ""
-        print(f"\n📂 Loaded {len(questions)} questions from golden dataset{range_str}")
+        if not filter_category:
+            print(f"\n📂 Loaded {len(questions)} questions{range_str}")
+
         return questions
 
     def call_edge_function(self, query: str, top_k: int = 5) -> Dict[str, Any]:
@@ -171,19 +157,38 @@ class RAGnosisEvaluator:
             )
             response.raise_for_status()
             return response.json()
-
         except requests.exceptions.Timeout:
-            return {
-                "answer": "Request timed out",
-                "sources": [],
-                "error": "timeout"
-            }
+            return {"answer": "Request timed out", "sources": [], "error": "timeout"}
         except Exception as e:
-            return {
-                "answer": f"Error: {str(e)}",
-                "sources": [],
-                "error": str(e)
-            }
+            return {"answer": f"Error: {str(e)}", "sources": [], "error": str(e)}
+
+    def validate_retrieval(self, prediction: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, bool]:
+        """Validate expected_doc_types and contains_info_about."""
+        validation = {}
+
+        # Check expected_doc_types
+        if "expected_doc_types" in expected:
+            source_types = [s.get("type", "") for s in prediction.get("sources", [])]
+            has_expected_types = any(
+                exp_type in source_types
+                for exp_type in expected["expected_doc_types"]
+            )
+            validation["has_expected_doc_types"] = has_expected_types
+
+        # Check contains_info_about
+        if "contains_info_about" in expected:
+            all_text = " ".join([
+                s.get("name", "") + " " + prediction.get("answer", "")
+                for s in prediction.get("sources", [])
+            ]).lower()
+
+            has_info = all(
+                entity.lower() in all_text
+                for entity in expected["contains_info_about"]
+            )
+            validation["has_expected_entities"] = has_info
+
+        return validation
 
     def evaluate_dataset(
         self,
@@ -192,117 +197,73 @@ class RAGnosisEvaluator:
         save_predictions: bool = False,
         output_dir: str = DEFAULT_OUTPUT_DIR,
     ) -> Dict[str, Any]:
-        """Evaluate RAGnosis on golden dataset using RAGAS."""
+        """Evaluate RAGnosis on golden dataset."""
         print(f"\n🔍 Running RAGnosis on {len(questions)} questions...")
 
         predictions = []
-        route_accuracy = []
-        source_count_accuracy = []
-        unanswerable_count = []  # NEW: Track "I don't know" responses
+        doc_type_accuracy = []
+        entity_accuracy = []
 
         for q in tqdm(questions, desc="Generating answers"):
             result = self.call_edge_function(q["question"], top_k=top_k)
 
-            # Extract contexts from sources
+            # Extract contexts
             contexts = []
-            if "sources" in result and result["sources"]:
-                for source in result["sources"]:
-                    if "content" in source:
-                        contexts.append(source["content"])
-                    elif "text" in source:
-                        contexts.append(source["text"])
+            for source in result.get("sources", []):
+                if "content" in source:
+                    contexts.append(source["content"])
+                elif "text" in source:
+                    contexts.append(source["text"])
 
-            # If no contexts but we have an answer, use answer as context
-            # This handles SQL queries which may not have "sources" with content
             if not contexts and result.get("answer"):
                 contexts = [result["answer"]]
 
-            answer = result.get("answer", "")
-
-            # NEW: Detect "I don't have enough information" responses (CRITICAL FAILURE)
-            is_unanswerable = any(phrase in answer.lower() for phrase in [
-                "i don't have enough information",
-                "i don't have sufficient information",
-                "i cannot provide information",
-                "no relevant sources found",
-                "the provided sources do not",
-                "i do not have information",
-                "unable to answer",
-                "cannot answer this question"
-            ])
-
             prediction = {
-                "question_id": q["question_id"],
                 "question": q["question"],
                 "ground_truth": q["ground_truth"],
-                "answer": answer,
+                "answer": result.get("answer", ""),
                 "contexts": contexts,
                 "sources": result.get("sources", []),
-                "num_sources": len(result.get("sources", [])),
-                "query_type": q.get("query_type", "unknown"),
-                "expected_route": q.get("expected_route", "unknown"),
                 "has_error": "error" in result,
-                "is_unanswerable": is_unanswerable,  # NEW: Flag as critical failure
             }
 
-            # Track unanswerable responses
-            unanswerable_count.append(1 if is_unanswerable else 0)
+            # Validate retrieval
+            validation = self.validate_retrieval(prediction, q)
+            prediction.update(validation)
 
-            # Check route accuracy if available
-            if "route" in result:
-                prediction["actual_route"] = result["route"]
-                if result["route"] == q.get("expected_route"):
-                    route_accuracy.append(1)
-                else:
-                    route_accuracy.append(0)
-
-            # Check source count accuracy
-            expected_sources = q.get("expected_sources")
-            expected_sources_min = q.get("expected_sources_min")
-            if expected_sources is not None:
-                if prediction["num_sources"] == expected_sources:
-                    source_count_accuracy.append(1)
-                else:
-                    source_count_accuracy.append(0)
-            elif expected_sources_min is not None:
-                if prediction["num_sources"] >= expected_sources_min:
-                    source_count_accuracy.append(1)
-                else:
-                    source_count_accuracy.append(0)
+            if "has_expected_doc_types" in validation:
+                doc_type_accuracy.append(1 if validation["has_expected_doc_types"] else 0)
+            if "has_expected_entities" in validation:
+                entity_accuracy.append(1 if validation["has_expected_entities"] else 0)
 
             predictions.append(prediction)
 
-        # Save predictions if requested
+        # Save predictions
         predictions_file = None
         if save_predictions:
             predictions_file = self._save_predictions(predictions, output_dir)
 
-        # Calculate custom metrics
+        # Custom metrics
         custom_metrics = {
             "total_questions": len(questions),
             "error_rate": sum(1 for p in predictions if p["has_error"]) / len(predictions),
-            "unanswerable_rate": sum(unanswerable_count) / len(unanswerable_count),  # NEW: CRITICAL METRIC
-            "unanswerable_count": sum(unanswerable_count),  # Absolute count
         }
 
-        if route_accuracy:
-            custom_metrics["route_accuracy"] = sum(route_accuracy) / len(route_accuracy)
+        if doc_type_accuracy:
+            custom_metrics["doc_type_accuracy"] = sum(doc_type_accuracy) / len(doc_type_accuracy)
+        if entity_accuracy:
+            custom_metrics["entity_accuracy"] = sum(entity_accuracy) / len(entity_accuracy)
 
-        if source_count_accuracy:
-            custom_metrics["source_count_accuracy"] = sum(source_count_accuracy) / len(source_count_accuracy)
-
-        # Prepare data for RAGAS evaluation
-        # Filter out predictions with no contexts (errors, out-of-scope)
+        # RAGAS evaluation
         valid_predictions = [p for p in predictions if p["contexts"]]
 
         if not valid_predictions:
-            print("\n⚠️  No valid predictions with contexts for RAGAS evaluation")
+            print("\n⚠️  No valid predictions for RAGAS")
             return {
                 "edge_function_url": self.edge_function_url,
                 "llm_model": self.llm_model,
                 "custom_metrics": custom_metrics,
                 "ragas_metrics": {},
-                "predictions": predictions,
                 "predictions_file": predictions_file,
             }
 
@@ -312,40 +273,23 @@ class RAGnosisEvaluator:
             "answer": [p["answer"] for p in valid_predictions],
             "contexts": [p["contexts"] for p in valid_predictions],
             "ground_truth": [p["ground_truth"] for p in valid_predictions],
+            "reference": [p["ground_truth"] for p in valid_predictions],
         }
 
         dataset = Dataset.from_dict(ragas_data)
 
-        # Run RAGAS evaluation
         try:
             from ragas.run_config import RunConfig
-
-            run_config = RunConfig(
-                max_workers=4,
-                max_wait=180,
-                timeout=180,
-                max_retries=5,
-            )
-
-            print("🔧 RAGAS Configuration:")
-            print("   - Parallel processing (max_workers=4)")
-            print("   - 5 retries for parsing errors")
-            print("   - 3 minute timeout per evaluation")
+            run_config = RunConfig(max_workers=4, max_wait=180, timeout=180, max_retries=5)
 
             ragas_result = evaluate(
                 dataset,
-                metrics=[
-                    faithfulness,
-                    answer_relevancy,
-                    context_precision,
-                    context_recall,
-                ],
+                metrics=[faithfulness, answer_relevancy, context_precision, answer_correctness],
                 llm=self.ragas_llm,
                 embeddings=self.ragas_embeddings,
                 run_config=run_config,
             )
 
-            # Convert to dictionary
             df = ragas_result.to_pandas()
             ragas_metrics = df.select_dtypes(include=['number']).mean().to_dict()
 
@@ -355,7 +299,6 @@ class RAGnosisEvaluator:
                 "embedding_model": self.embedding_model,
                 "custom_metrics": custom_metrics,
                 "ragas_metrics": ragas_metrics,
-                "predictions": predictions,
                 "predictions_file": predictions_file,
             }
 
@@ -364,28 +307,23 @@ class RAGnosisEvaluator:
             return {
                 "edge_function_url": self.edge_function_url,
                 "llm_model": self.llm_model,
-                "embedding_model": self.embedding_model,
                 "custom_metrics": custom_metrics,
                 "ragas_metrics": {},
-                "predictions": predictions,
                 "predictions_file": predictions_file,
                 "ragas_error": str(e),
             }
 
-    def _save_predictions(
-        self, predictions: List[Dict[str, Any]], output_dir: str
-    ) -> str:
-        """Save predictions to JSON file."""
+    def _save_predictions(self, predictions: List[Dict], output_dir: str) -> str:
+        """Save predictions to JSON."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
         filename = output_path / f"predictions_{timestamp}.json"
-
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(predictions, f, indent=2, ensure_ascii=False)
 
-        print(f"💾 Predictions saved to: {filename}")
+        print(f"💾 Predictions saved: {filename}")
         return str(filename)
 
 
@@ -398,23 +336,18 @@ def print_results(results: Dict[str, Any]):
     print(f"\n📋 Configuration:")
     print(f"  Edge Function:   {results['edge_function_url']}")
     print(f"  LLM Model:       {results['llm_model']}")
-    print(f"  Embedding Model: {results.get('embedding_model', 'N/A')}")
 
     print(f"\n📊 Custom Metrics:")
-    for metric_name, value in results["custom_metrics"].items():
+    for metric, value in results["custom_metrics"].items():
         if isinstance(value, float):
-            print(f"  {metric_name:25s}: {value:.4f}")
+            print(f"  {metric:25s}: {value:.4f}")
         else:
-            print(f"  {metric_name:25s}: {value}")
+            print(f"  {metric:25s}: {value}")
 
     if results["ragas_metrics"]:
         print(f"\n📊 RAGAS Metrics:")
-        for metric_name, value in results["ragas_metrics"].items():
-            print(f"  {metric_name:25s}: {value:.4f}")
-    elif "ragas_error" in results:
-        print(f"\n❌ RAGAS Error: {results['ragas_error']}")
-    else:
-        print("\n⚠️  No RAGAS metrics available")
+        for metric, value in results["ragas_metrics"].items():
+            print(f"  {metric:25s}: {value:.4f}")
 
     if results.get("predictions_file"):
         print(f"\n💾 Predictions: {results['predictions_file']}")
@@ -423,95 +356,41 @@ def print_results(results: Dict[str, Any]):
 
 
 def save_results(results: Dict[str, Any], output_dir: str):
-    """Save evaluation results to JSON file."""
+    """Save results to JSON."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = output_path / f"evaluation_results_{timestamp}.json"
+    filename = output_path / f"evaluation_results_{timestamp}.json"
 
-    # Remove predictions from saved results (too large)
-    results_to_save = results.copy()
-    results_to_save.pop("predictions", None)
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
 
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(results_to_save, f, indent=2, ensure_ascii=False)
-
-    print(f"💾 Results saved to: {output_file}")
-    return str(output_file)
+    print(f"💾 Results saved: {filename}")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="RAGnosis RAGAS Evaluation"
-    )
-    parser.add_argument(
-        "--golden_data",
-        default=DEFAULT_GOLDEN_DATA,
-        help="Path to golden dataset JSONL file",
-    )
-    parser.add_argument(
-        "--max_samples",
-        type=int,
-        default=None,
-        help="Maximum number of samples to evaluate",
-    )
-    parser.add_argument(
-        "--offset",
-        type=int,
-        default=0,
-        help="Skip first N questions (for range testing)",
-    )
-    parser.add_argument(
-        "--top_k",
-        type=int,
-        default=5,
-        help="Number of sources to retrieve",
-    )
-    parser.add_argument(
-        "--llm_model",
-        default=DEFAULT_LLM_MODEL,
-        help="LLM model for RAGAS evaluation",
-    )
-    parser.add_argument(
-        "--llm_base_url",
-        default=DEFAULT_LLM_BASE_URL,
-        help="LLM base URL",
-    )
-    parser.add_argument(
-        "--embedding_model",
-        default=DEFAULT_EMBEDDING_MODEL,
-        help="Embedding model for RAGAS",
-    )
-    parser.add_argument(
-        "--edge_function_url",
-        default=DEFAULT_EDGE_FUNCTION_URL,
-        help="Edge function URL",
-    )
-    parser.add_argument(
-        "--output_dir",
-        default=DEFAULT_OUTPUT_DIR,
-        help="Output directory for results",
-    )
-    parser.add_argument(
-        "--save_predictions",
-        action="store_true",
-        help="Save individual predictions to file",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=DEFAULT_TIMEOUT,
-        help="Request timeout in seconds",
-    )
+    parser = argparse.ArgumentParser(description="RAGnosis RAGAS Evaluation v2")
+    parser.add_argument("--golden_data", default=DEFAULT_GOLDEN_DATA)
+    parser.add_argument("--max_samples", type=int, default=None, help="Max questions to evaluate")
+    parser.add_argument("--offset", type=int, default=0, help="Skip first N questions")
+    parser.add_argument("--filter_category", type=str, default=None,
+                       help="Filter by category: concepts, models, repos, comparison, implementation, troubleshooting")
+    parser.add_argument("--top_k", type=int, default=5)
+    parser.add_argument("--llm_model", default=DEFAULT_LLM_MODEL)
+    parser.add_argument("--llm_base_url", default=DEFAULT_LLM_BASE_URL)
+    parser.add_argument("--embedding_model", default=DEFAULT_EMBEDDING_MODEL)
+    parser.add_argument("--edge_function_url", default=DEFAULT_EDGE_FUNCTION_URL)
+    parser.add_argument("--output_dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--save_predictions", action="store_true")
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
 
     args = parser.parse_args()
 
     print("=" * 70)
-    print("🚀 RAGnosis RAGAS Evaluation")
+    print("🚀 RAGnosis RAGAS Evaluation v2")
     print("=" * 70)
 
-    # Initialize evaluator
     evaluator = RAGnosisEvaluator(
         edge_function_url=args.edge_function_url,
         llm_model=args.llm_model,
@@ -520,14 +399,13 @@ def main():
         timeout=args.timeout,
     )
 
-    # Load golden dataset
     questions = evaluator.load_golden_dataset(
         args.golden_data,
         max_samples=args.max_samples,
-        offset=args.offset
+        offset=args.offset,
+        filter_category=args.filter_category
     )
 
-    # Run evaluation
     results = evaluator.evaluate_dataset(
         questions,
         top_k=args.top_k,
@@ -535,10 +413,7 @@ def main():
         output_dir=args.output_dir,
     )
 
-    # Display results
     print_results(results)
-
-    # Save results
     save_results(results, args.output_dir)
 
 

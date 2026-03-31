@@ -1,357 +1,146 @@
 # RAGnosis Evaluation
 
-RAGAS-based evaluation system for the RAGnosis Edge Function. Tests retrieval quality, answer accuracy, and routing correctness using a comprehensive golden dataset.
+Quick evaluation guide for diagnostic/support RAG system.
 
-## 📋 Overview
+## 🎯 Quick Start
 
-This evaluation framework tests:
-- **Answer Quality**: Faithfulness, relevancy, and accuracy using RAGAS metrics
-- **Retrieval Quality**: Context precision and recall
-- **Routing Accuracy**: Correct query routing (SQL vs blog search)
-- **Source Quality**: Appropriate number and relevance of sources
-- **Error Handling**: Out-of-scope and edge case queries
-
-## 🎯 Golden Dataset
-
-The golden dataset (`golden_data/golden_dataset.jsonl`) contains **40 carefully crafted test cases**:
-
-### Query Types
-- **SQL/Market Intelligence** (14 questions): Top models, frameworks, trends
-  - Example: "What are the top 5 embedding models by downloads?"
-
-- **Blog/Implementation** (18 questions): How-to guides, troubleshooting, best practices
-  - Example: "How to improve retrieval accuracy in RAG?"
-
-- **Comparison** (3 questions): Framework and model comparisons
-  - Example: "LangChain vs LlamaIndex for RAG"
-
-- **Edge Cases** (6 questions): Out-of-scope, ambiguous, broad queries
-  - Example: "What is the capital of France?" (should reject)
-
-- **Mixed Queries** (3 questions): Combining market data with implementation guidance
-  - Example: "What's the most popular embedding model and how do I use it?"
-
-### Dataset Format
-
-Each entry in the JSONL file contains:
-```json
-{
-  "question_id": "sql_001",
-  "question": "What are the top 5 embedding models by downloads?",
-  "ground_truth": "The top 5 embedding models by downloads are...",
-  "query_type": "sql_market",
-  "expected_route": "top_models",
-  "expected_sources": 5
-}
-```
-
-## 🚀 Setup
-
-### Prerequisites
-
-1. **Python Virtual Environment**: Install evaluation dependencies
-   ```bash
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r evaluation/requirements.txt
-   ```
-
-2. **Local Supabase**: Edge function must be running locally
-   ```bash
-   make chat  # Starts edge function + Streamlit UI
-   ```
-
-3. **Ollama**: Required for RAGAS evaluation
-   ```bash
-   docker compose up ollama -d
-
-   # Pull required model
-   docker compose exec ollama ollama pull qwen2.5:3b-instruct
-   ```
-
-## 📊 Running Evaluations
-
-### Quick Evaluation (10 samples)
-
+**Run evaluation (23 questions, ~2 min):**
 ```bash
-make eval-quick
-
-# Or run directly
-cd evaluation && python evaluate_ragnosis.py \
-  --max_samples 10 \
-  --save_predictions
+cd evaluation
+. ../venv/bin/activate
+python3 evaluate_ragnosis.py --golden_data golden_data/golden_dataset.jsonl > /tmp/eval.txt 2>&1
+tail -35 /tmp/eval.txt  # See metrics only
 ```
 
-### Full Evaluation (all 40 questions)
-
+**Test specific query types:**
 ```bash
-make eval-full
-
-# Or run directly
-cd evaluation && python evaluate_ragnosis.py \
-  --save_predictions
+python3 evaluate_ragnosis.py --offset 5 --max_samples 7  # Implementation (5-11)
+python3 evaluate_ragnosis.py --offset 0 --max_samples 5  # Conceptual (0-4)
 ```
 
-### Custom Evaluation
+## 📊 Understanding Metrics
 
-```bash
-# Run N samples from a specific section
-make eval N=20 SECTION=sql_
+**For Diagnostic RAG, prioritize:**
+1. **Faithfulness (target: 0.85+)** - Answers don't hallucinate, grounded in sources
+2. **Relevancy (target: 0.75+)** - Answers directly address user's question
+3. Precision/Recall - Less critical (users want guidance, not exact docs)
 
-# Run all samples from a section
-make eval ALL=1 SECTION=blog_
+**Metric definitions:**
+- **Faithfulness:** Claims in answer ÷ claims supported by sources
+- **Relevancy:** How well answer addresses the specific question
+- **Precision:** Retrieved docs are relevant (low = too much noise)
+- **Recall:** Found all relevant docs (low = missing information)
 
-# Or run directly with custom options
-cd evaluation && python evaluate_ragnosis.py \
-  --max_samples 20 \
-  --top_k 5 \
-  --llm_model qwen2.5:7b-instruct \
-  --edge_function_url http://127.0.0.1:54321/functions/v1/rag-chat \
-  --output_dir results \
-  --save_predictions \
-  --timeout 90
+**Current State:** faithfulness 0.85 ✓, relevancy 0.75 ✓
+
+## 🔧 Key Config Parameters
+
+All located in `supabase/functions/rag-chat/config.ts`:
+
+```typescript
+candidateCount: 50        // Fetches 100 total (50 vector + 50 BM25) for RRF
+finalResultCount: 20      // Returns top 20 after RRF fusion
+structuredDataBoost: 1.0  // Multiplier for models/repos (1.0 = neutral, 1.2-1.3 = favor)
+primaryExcerpt: 400       // Context chars for top 2 sources
+secondaryExcerpt: 150     // Context chars for sources 3-20
 ```
 
-### Available Options
+**Critical Bug Alert:** `structuredDataBoost: 0` zeros out all models/repos scores!
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--golden_data` | `evaluation/golden_data/golden_dataset.jsonl` | Path to golden dataset |
-| `--max_samples` | `None` (all) | Limit number of test cases |
-| `--top_k` | `5` | Number of sources to retrieve |
-| `--llm_model` | `qwen2.5:3b-instruct` | Model for RAGAS evaluation |
-| `--llm_base_url` | `http://localhost:11434` | Ollama URL |
-| `--embedding_model` | `BAAI/bge-small-en-v1.5` | Embedding model for RAGAS |
-| `--edge_function_url` | `http://127.0.0.1:54321/functions/v1/rag-chat` | Edge function endpoint |
-| `--output_dir` | `evaluation/results` | Results directory |
-| `--save_predictions` | `False` | Save detailed predictions |
-| `--timeout` | `60` | Request timeout (seconds) |
+## ⚡ Quick Improvements
 
-## 📈 Metrics Explained
+### Option 1: Tune Boost (Quickest - 2min test)
+```typescript
+// config.ts line 44
+structuredDataBoost: 1.2,  // Try 1.2-1.3 for better recall
+```
+**Impact:** Better recall by helping models/repos compete with blogs
 
-### RAGAS Metrics
-
-1. **Faithfulness** (0.0 - 1.0)
-   - Measures if answer is grounded in retrieved context
-   - High score = answer doesn't hallucinate
-   - Target: > 0.8
-
-2. **Answer Relevancy** (0.0 - 1.0)
-   - Measures if answer addresses the question
-   - High score = directly answers user's query
-   - Target: > 0.7
-
-3. **Context Precision** (0.0 - 1.0)
-   - Measures if retrieved chunks are relevant
-   - High score = all retrieved docs are useful
-   - Target: > 0.7
-
-4. **Context Recall** (0.0 - 1.0)
-   - Measures if retrieved context contains ground truth
-   - High score = all info from ground truth is retrieved
-   - Target: > 0.7
-
-### Custom Metrics
-
-1. **Route Accuracy**
-   - Percentage of queries routed correctly (SQL vs blog vs vector)
-   - Target: > 0.9
-
-2. **Source Count Accuracy**
-   - Percentage of queries returning expected number of sources
-   - Target: > 0.8
-
-3. **Error Rate**
-   - Percentage of queries that resulted in errors
-   - Target: < 0.05
-
-## 📁 Output Files
-
-Evaluation generates two output files in `evaluation/results/`:
-
-### 1. Evaluation Results
-`evaluation_results_YYYYMMDD_HHMMSS.json`
-```json
-{
-  "edge_function_url": "http://127.0.0.1:54321/functions/v1/rag-chat",
-  "llm_model": "qwen2.5:3b-instruct",
-  "custom_metrics": {
-    "total_questions": 40,
-    "error_rate": 0.025,
-    "route_accuracy": 0.925,
-    "source_count_accuracy": 0.875
-  },
-  "ragas_metrics": {
-    "faithfulness": 0.8234,
-    "answer_relevancy": 0.7891,
-    "context_precision": 0.7654,
-    "context_recall": 0.8012
-  }
-}
+### Option 2: Adjust Result Count (Quick)
+```typescript
+// config.ts line 40
+finalResultCount: 15,  // Lower = higher precision (less noise)
+finalResultCount: 25,  // Higher = higher recall (more coverage)
 ```
 
-### 2. Detailed Predictions (if `--save_predictions` used)
-`predictions_YYYYMMDD_HHMMSS.json`
-```json
-[
-  {
-    "question_id": "sql_001",
-    "question": "What are the top 5 embedding models?",
-    "ground_truth": "The top 5 embedding models are...",
-    "answer": "Based on download metrics...",
-    "contexts": ["..."],
-    "sources": [...],
-    "num_sources": 5,
-    "query_type": "sql_market",
-    "expected_route": "top_models",
-    "actual_route": "top_models",
-    "has_error": false
-  }
-]
+### Option 3: Increase Context (Medium - if relevancy low)
+```typescript
+// config.ts lines 48-49
+primaryExcerpt: 600,      // More complete answers
+secondaryExcerpt: 200,    // More context per source
 ```
+⚠️ **Warning:** Keep total context <2K tokens for 3B models (quality degrades beyond that)
 
-## 🔧 Troubleshooting
+### Option 4: Add Reranking (Complex)
+- Use cross-encoder after RRF to rerank top 20
+- Impact: +10-15% precision/recall
+- Tradeoff: +model download, +200ms latency
 
-### Edge Function Not Responding
+## 🔍 Answer Generation
 
-```bash
-# Check if edge function is running
-curl http://127.0.0.1:54321/functions/v1/rag-chat \
-  -H "Content-Type: application/json" \
-  -d '{"query": "test", "top_k": 1}'
+Located in `supabase/functions/rag-chat/answer-generator.ts`:
 
-# Start if needed
-make chat
-```
+**Key prompt elements:**
+- Line 154-166: Base grounding rules ("ONLY use sources")
+- Line 203-209: Conceptual intent instructions
+- Line 206: **"FIRST: Directly answer user's specific question"** (critical for relevancy)
 
-### Ollama Connection Issues
+**If relevancy drops:** Check this instruction is present and not removed
 
-```bash
-# Check Ollama is running
-docker compose ps ollama
+## 🐛 Troubleshooting
 
-# Test Ollama locally
-curl http://localhost:11434/api/tags
+**Faithfulness drops (<0.80):**
+- Check: `answer-generator.ts` grounding rules (lines 154-166)
+- Fix: Strengthen "ONLY use sources" instruction
+- Cause: LLM adding knowledge beyond retrieved sources
 
-# Restart Ollama if needed
-docker compose restart ollama
-```
+**Relevancy drops (<0.70):**
+- Check: "FIRST: Directly answer..." at line 206 of answer-generator.ts
+- Fix: Ensure direct answer instruction is present
+- Cause: LLM giving generic coverage instead of answering question
 
-### RAGAS Evaluation Fails
+**Recall drops (<0.45):**
+- Check: structuredDataBoost ≥ 1.0 (line 44 config.ts)
+- Try: Increase boost to 1.2-1.3
+- Alternative: Increase candidateCount (50 → 60)
+- Cause: Models/repos not scoring high enough vs blogs
 
-Common causes:
-1. **Ollama model not pulled**: Run `docker compose exec ollama ollama pull qwen2.5:3b-instruct`
-2. **Timeout too short**: Increase with `--timeout 120`
-3. **No valid contexts**: Check if edge function is returning sources
-4. **Missing dependencies**: Activate venv and install requirements
+**Precision drops (<0.35):**
+- Check: finalResultCount (line 40 config.ts)
+- Try: Reduce from 20 to 15
+- Alternative: Lower structuredDataBoost if too high
+- Cause: Too much noise in retrieved sources
 
-### Python Environment Issues
+## 📝 Important Concepts
 
-```bash
-# Recreate virtual environment
-rm -rf venv
-python -m venv venv
-source venv/bin/activate
-pip install -r evaluation/requirements.txt
-```
+**This is diagnostic/support RAG, not fact retrieval:**
+- Users want troubleshooting guidance, not specific data points
+- Faithfulness > Relevancy >> Precision/Recall (in priority)
+- Don't over-optimize precision/recall - users care about helpful answers
 
-## 📝 Adding New Test Cases
+**Key learnings:**
+- Stratified sampling removed (added complexity, marginal gains)
+- More context helps (200→400 chars improved relevancy +2%)
+- Direct answer instruction critical (added to conceptual prompt)
+- Query routing works well (don't disable it)
 
-To add new test cases to the golden dataset:
+**Cost considerations:**
+- Local Ollama: Free
+- OpenRouter qwen2.5:3b: ~$0.24 per 1K queries
+- Context budget: Keep <2K tokens for quality with 3B models
 
-1. Edit `golden_data/golden_dataset.jsonl`
-2. Add a new line with your test case in JSON format:
-   ```json
-   {"question_id": "sql_015", "question": "Your question?", "ground_truth": "Expected answer", "query_type": "sql_market", "expected_route": "top_models", "expected_sources": 5}
-   ```
+## 🔄 Testing Workflow
 
-3. Run evaluation to test new cases
+1. Make ONE config change
+2. Run quick eval: `python3 evaluate_ragnosis.py`
+3. Check metrics (tail output)
+4. If improved: commit; if worse: revert
+5. Repeat
 
-### Test Case Guidelines
-
-- **question_id**: Unique ID (format: `{type}_{number}`)
-- **question**: User query (test actual phrasing users might use)
-- **ground_truth**: Expected answer (be specific, include metrics)
-- **query_type**: One of `sql_market`, `blog_implementation`, `comparison`, `mixed`, `out_of_scope`, `ambiguous`
-- **expected_route**: Expected routing (`top_models`, `top_repos`, `trends`, `blog_search`, `vector_search`)
-- **expected_sources**: Exact count (for SQL) or use `expected_sources_min` (for blog queries)
-
-## 🎯 Baseline Performance
-
-Target metrics for RAGnosis v1.0:
-
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Faithfulness | > 0.80 | Answers grounded in sources |
-| Answer Relevancy | > 0.75 | Directly answers question |
-| Context Precision | > 0.70 | Retrieved docs are relevant |
-| Context Recall | > 0.70 | Captures ground truth info |
-| Route Accuracy | > 0.90 | Correct SQL vs blog routing |
-| Source Count Accuracy | > 0.80 | Appropriate # of sources |
-| Error Rate | < 0.05 | < 5% of queries fail |
-
-## 🔄 Continuous Evaluation
-
-### Before Deployment
-
-```bash
-# Run full evaluation before production deploy
-make eval-full
-
-# Check results
-cat evaluation/results/evaluation_results_*.json | jq '.ragas_metrics'
-```
-
-### Regression Testing
-
-```bash
-# Test SQL queries only (first 14 questions)
-make eval N=14
-
-# Test SQL + blog queries (first 32 questions)
-make eval N=32
-
-# Test specific section
-make eval ALL=1 SECTION=sql_
-```
-
-### A/B Testing
-
-To compare different configurations:
-
-```bash
-# Baseline
-cd evaluation && python evaluate_ragnosis.py \
-  --top_k 5 --output_dir results/baseline --save_predictions
-
-# Experiment with top_k=10
-cd evaluation && python evaluate_ragnosis.py \
-  --top_k 10 --output_dir results/experiment_topk10 --save_predictions
-
-# Compare results
-diff <(jq '.ragas_metrics' evaluation/results/baseline/evaluation_results_*.json) \
-     <(jq '.ragas_metrics' evaluation/results/experiment_topk10/evaluation_results_*.json)
-```
-
-## 📚 References
-
-- [RAGAS Documentation](https://docs.ragas.io/)
-- [RAGAS Metrics Guide](https://docs.ragas.io/en/latest/concepts/metrics/index.html)
-- [RAGnosis Documentation](../README.md)
-- [Example Queries](../docs/example_queries.md)
-
-## 🤝 Contributing
-
-To improve the evaluation system:
-
-1. Add more diverse test cases to golden dataset
-2. Improve ground truth answers based on actual system responses
-3. Add new custom metrics for specific use cases
-4. Update baseline targets as system improves
+**Don't change multiple things at once** - you won't know what worked.
 
 ---
 
-**Last Updated**: 2026-03-27
-**Golden Dataset**: 40 test cases (SQL, blog, comparison, edge cases, mixed)
-**RAGAS Version**: 0.1.0+
-**Evaluation Environment**: Local Ollama + Supabase Edge Functions
+**Setup:** `pip install -r requirements.txt` in venv
+**Edge function must be running:** `make chat` or equivalent
+**Ollama required for RAGAS:** `docker compose up ollama -d`

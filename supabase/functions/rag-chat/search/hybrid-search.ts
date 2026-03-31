@@ -5,6 +5,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import type { SearchResult } from '../types.ts'
+import { CrossEncoderReranker } from '../reranker.ts'
 
 // Supabase.ai is globally available in edge runtime
 declare const Supabase: any
@@ -18,12 +19,15 @@ interface SearchConfig {
 
 export class HybridSearch {
   private aiSession: any = null
+  private reranker: CrossEncoderReranker
 
   constructor(
     private supabase: ReturnType<typeof createClient>,
     private config: SearchConfig,
     private embeddingModel: string
-  ) {}
+  ) {
+    this.reranker = new CrossEncoderReranker()
+  }
 
   /**
    * Perform hybrid search combining vector and text search
@@ -44,14 +48,15 @@ export class HybridSearch {
     console.log(`📊 Text search: ${textResults.length} results`)
 
     // Merge with Reciprocal Rank Fusion (RRF)
+    // const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2)
     const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2)
     console.log(`📊 Merged: ${merged.length} unique results`)
 
-    // Return top N results by RRF score
-    const final = merged.slice(0, this.config.finalResultCount)
-    console.log(`✅ Hybrid search complete: ${final.length} results`)
+    // Rerank merged results using semantic similarity
+    const reranked = await this.reranker.rerank(query, merged, this.config.finalResultCount)
+    console.log(`✅ Hybrid search complete: ${reranked.length} results after reranking`)
 
-    return final
+    return reranked
   }
 
   /**
@@ -114,8 +119,9 @@ export class HybridSearch {
   }
 
   /**
-   * Merge results using Reciprocal Rank Fusion (RRF)
-   * RRF formula: score(d) = sum(1 / (k + rank(d))) for each ranking
+   * Merge results using weighted Reciprocal Rank Fusion (RRF)
+   * Weights: 70% vector (semantic), 30% BM25 (keyword) - optimized for balanced retrieval
+   * RRF formula: score(d) = sum(weight * 1 / (k + rank(d))) for each ranking
    */
   private mergeWithRRF(
     vectorResults: SearchResult[],
@@ -123,22 +129,24 @@ export class HybridSearch {
     limit: number
   ): SearchResult[] {
     const k = 60  // RRF constant (typical value)
+    const vectorWeight = 0.7  // 70% weight for semantic search
+    const keywordWeight = 0.3  // 30% weight for keyword search
     const scores = new Map<string, { result: SearchResult; score: number }>()
 
-    // Add vector search scores
+    // Add vector search scores (70% weight)
     vectorResults.forEach((result, index) => {
       const rank = index + 1
-      const score = 1 / (k + rank)
+      const score = vectorWeight * (1 / (k + rank))
       scores.set(result.id, { result, score })
     })
 
-    // Add text search scores
+    // Add text search scores (30% weight)
     textResults.forEach((result, index) => {
       const rank = index + 1
-      const score = 1 / (k + rank)
+      const score = keywordWeight * (1 / (k + rank))
 
       if (scores.has(result.id)) {
-        // Document appears in both - add scores
+        // Document appears in both - add weighted scores
         scores.get(result.id)!.score += score
       } else {
         scores.set(result.id, { result, score })

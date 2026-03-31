@@ -17,71 +17,38 @@ export class ReposRepository {
    * Get top repos by stars with optional filters
    */
   async getTopByStars(limit: number, filters?: ReposFilters): Promise<SearchResult[]> {
-    console.log(`📊 Top repos by stars (using market query)`)
+    console.log(`📊 Top repos by stars`)
 
-    const hasFilters = (filters?.categories && filters.categories.length > 0) ||
-                       (filters?.owners && filters.owners.length > 0)
+    // Try with filters if provided
+    const category = filters?.categories?.[0] || null
+    const owner = filters?.owners?.[0] || null
+    const results = await this.query(limit, category, owner)
 
-    // Try with filters first if specified
-    if (hasFilters) {
-      const results = await this.queryWithFilters(limit, filters!)
-      if (results.length > 0) {
-        return results
-      }
+    // Fallback if filtered query returned nothing
+    if (results.length === 0 && (category || owner)) {
       console.log(`⚠️  No repos with filters, falling back to unfiltered`)
+      return await this.query(limit, null, null)
     }
 
-    // Fall back to unfiltered query
-    return await this.queryUnfiltered(limit)
+    return results
   }
 
   /**
-   * Query with category and owner filters
+   * Query top repos using get_top_repos RPC function
    */
-  private async queryWithFilters(limit: number, filters: ReposFilters): Promise<SearchResult[]> {
-    let query = this.supabase
-      .from('documents')
-      .select('*')
-      .eq('doc_type', 'github_repo')
-
-    if (filters.categories && filters.categories.length > 0) {
-      query = query.in('rag_category', filters.categories)
-    }
-
-    if (filters.owners && filters.owners.length > 0) {
-      query = query.in('owner', filters.owners)
-    }
-
-    const { data, error } = await query
-      .not('stars', 'is', null)
-      .order('stars', { ascending: false })
-      .limit(limit)
-
-    if (error || !data || data.length === 0) {
-      return []
-    }
-
-    return data.map(r => this.mapToSearchResult(r))
-  }
-
-  /**
-   * Query without filters
-   */
-  private async queryUnfiltered(limit: number): Promise<SearchResult[]> {
-    const { data, error } = await this.supabase
-      .from('documents')
-      .select('*')
-      .eq('doc_type', 'github_repo')
-      .not('stars', 'is', null)
-      .order('stars', { ascending: false })
-      .limit(limit)
+  private async query(limit: number, category: string | null, owner: string | null): Promise<SearchResult[]> {
+    const { data, error } = await this.supabase.rpc('get_top_repos', {
+      match_limit: limit,
+      filter_category: category,
+      filter_owner: owner
+    })
 
     if (error) {
       console.error('❌ Top repos query failed:', JSON.stringify(error, null, 2))
       return []
     }
 
-    return (data || []).map(r => this.mapToSearchResult(r))
+    return (data || []).map((r: any) => this.mapToSearchResult(r))
   }
 
   /**

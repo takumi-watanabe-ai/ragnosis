@@ -7,16 +7,24 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import { config } from './config.ts'
-import { createQueryPlan } from './query-planner.ts'
+import { createQueryPlan } from './llm-query-planner.ts'
 import { executeDataSource } from './data-sources.ts'
 import { generateAnswer } from './answer-generator.ts'
+import { evaluateAnswer } from './answer-evaluator.ts'
 import type { SearchResult } from './types.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': config.cors.allowOrigin,
   'Access-Control-Allow-Headers': config.cors.allowHeaders,
 }
+
+// Create Supabase client
+const supabase = createClient(
+  config.database.url,
+  config.database.serviceRoleKey
+)
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -38,7 +46,7 @@ serve(async (req) => {
     console.log(`${'='.repeat(60)}`)
 
     // Step 1: Plan (1 LLM call)
-    const plan = await createQueryPlan(query, top_k)
+    const plan = await createQueryPlan(query, top_k, supabase)
 
     if (!plan.is_valid) {
       return new Response(
@@ -75,8 +83,13 @@ serve(async (req) => {
       )
     }
 
-    // Step 3: Synthesize (1 LLM call)
+    // Step 3: Synthesize answer
     const answer = await generateAnswer(query, results, plan.intent)
+
+    // Step 4: Evaluate answer quality (for monitoring only)
+    const evaluation = await evaluateAnswer(query, answer, results.length)
+    console.log(`📊 Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`)
+    console.log(`📊 Answer issues: ${evaluation.issues}`)
 
     // Format sources for response
     const sources = results.map((r, i) => {

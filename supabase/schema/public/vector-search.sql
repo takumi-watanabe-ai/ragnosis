@@ -3,8 +3,6 @@
 -- Public API with validation - delegates to private schema
 -- ============================================================================
 
-DROP FUNCTION IF EXISTS public.vector_search_documents(vector, integer, text, text);
-
 CREATE OR REPLACE FUNCTION public.vector_search_documents(
     query_embedding vector(384),
     match_limit INTEGER DEFAULT 10,

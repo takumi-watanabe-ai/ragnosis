@@ -34,13 +34,14 @@ export const config = {
   // Search and context configuration
   search: {
     // Candidate fetching for reranking
-    candidateCount: 50,       // Fetch 50 candidates from each method (100 total for RRF)
+    candidateCount: 50,       // Fetch 60 candidates from each method (120 total for RRF) - increased for better recall
 
     // Final results to return (regardless of limit param)
     finalResultCount: 20,     // Return top 20 after RRF fusion
 
     // Boost for structured data (models/repos)
     // With full READMEs, content is balanced but structured data needs edge to compete
+    // No boost - let content quality determine ranking
     structuredDataBoost: 1.0,
 
     // Context sizing (token-optimized)
@@ -48,6 +49,26 @@ export const config = {
       primaryExcerpt: 400,     // Top 2 sources get full context
       secondaryExcerpt: 150,   // Sources 3-20 get moderate context
       descriptionMax: 150,     // Description truncation
+    },
+  },
+
+  // Feature flags for experimental RAG improvements
+  features: {
+    // Query planner - intelligent routing to appropriate data sources
+    queryPlanner: {
+      enabled: false,          // OFF by default (uses simple semantic search)
+    },
+
+    // Query expansion - generate semantic variations to improve recall
+    queryExpansion: {
+      enabled: false,          // OFF by default
+      maxVariations: 2,        // Number of query variations to generate
+    },
+
+    // Answer verification - validate answer claims against sources
+    answerVerification: {
+      enabled: false,          // OFF by default
+      minFaithfulness: 0.7,    // Minimum faithfulness threshold
     },
   },
 
