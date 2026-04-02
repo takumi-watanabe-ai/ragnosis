@@ -9,8 +9,37 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        // theindex.website inspired palette
+        cream: {
+          DEFAULT: "#ffffff",
+          dark: "#fafafa",
+        },
+        charcoal: {
+          DEFAULT: "#222222",
+          light: "#333333",
+        },
+        stone: {
+          DEFAULT: "#666666",
+          light: "#999999",
+          border: "#e0e0e0",
+        },
+      },
+      fontFamily: {
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          'sans-serif',
+        ],
+        serif: [
+          'Georgia',
+          'Times',
+          '"Times New Roman"',
+          'serif',
+        ],
       },
     },
   },

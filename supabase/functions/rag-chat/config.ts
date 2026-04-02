@@ -52,11 +52,17 @@ export const config = {
     },
   },
 
+  // Ranking query configuration (for top models/repos queries)
+  ranking: {
+    candidateCount: 100,      // Fetch top 100 by metric (downloads/stars)
+    finalResultCount: 20,     // Rerank to top 20 based on query relevance
+  },
+
   // Feature flags for experimental RAG improvements
   features: {
     // Query planner - intelligent routing to appropriate data sources
     queryPlanner: {
-      enabled: false,          // OFF by default (uses simple semantic search)
+      enabled: true,           // ON - required for ranking queries with reranking
     },
 
     // Query expansion - generate semantic variations to improve recall

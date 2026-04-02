@@ -55,7 +55,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
       <Button
         variant="ghost"
         onClick={() => setOpen(true)}
-        className="w-full justify-start gap-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+        className="w-full justify-start gap-2 text-stone hover:text-charcoal hover:bg-cream text-xs uppercase tracking-wide font-normal"
       >
         <SettingsIcon className="h-4 w-4" />
         <span>Settings</span>
@@ -65,8 +65,10 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
         <DialogContent>
           <DialogClose onClick={() => setOpen(false)} />
           <DialogHeader>
-            <DialogTitle>Response Settings</DialogTitle>
-            <DialogDescription className="text-gray-700">
+            <DialogTitle className="uppercase tracking-wide">
+              Response Settings
+            </DialogTitle>
+            <DialogDescription>
               Adjust how the AI generates responses
             </DialogDescription>
           </DialogHeader>
@@ -75,10 +77,10 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
             {/* Show Sources */}
             <div className="flex items-center justify-between py-2">
               <div>
-                <label className="text-sm font-medium text-gray-900">
+                <label className="text-sm font-normal text-charcoal uppercase tracking-wide">
                   Show Sources
                 </label>
-                <p className="text-xs text-gray-700 mt-1">
+                <p className="text-sm text-stone mt-1 font-light">
                   Display source references below responses
                 </p>
               </div>
@@ -94,17 +96,17 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
                   }
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <div className="w-11 h-6 bg-stone-border peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cream-dark rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-charcoal"></div>
               </label>
             </div>
 
             {/* Number of Sources */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium text-gray-900">
+                <label className="text-sm font-normal text-charcoal uppercase tracking-wide">
                   Number of Sources
                 </label>
-                <span className="text-sm font-semibold text-blue-600">
+                <span className="text-sm font-normal text-charcoal">
                   {localSettings.topK}
                 </span>
               </div>
@@ -117,7 +119,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
                 max={10}
                 step={1}
               />
-              <p className="text-xs text-gray-700 mt-1">
+              <p className="text-sm text-stone mt-1 font-light">
                 How many sources to retrieve and use in the answer
               </p>
             </div>
@@ -125,10 +127,10 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
             {/* Temperature */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium text-gray-900">
+                <label className="text-sm font-normal text-charcoal uppercase tracking-wide">
                   Temperature
                 </label>
-                <span className="text-sm font-semibold text-blue-600">
+                <span className="text-sm font-normal text-stone">
                   {localSettings.temperature.toFixed(1)}
                 </span>
               </div>
@@ -142,7 +144,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
                 step={0.1}
                 disabled
               />
-              <p className="text-xs text-gray-700 mt-1">
+              <p className="text-sm text-stone mt-1 font-light">
                 Controls creativity (lower = more focused, higher = more
                 creative) - Coming soon
               </p>
@@ -151,10 +153,10 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
             {/* Max Tokens */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium text-gray-900">
+                <label className="text-sm font-normal text-charcoal uppercase tracking-wide">
                   Max Response Length
                 </label>
-                <span className="text-sm font-semibold text-blue-600">
+                <span className="text-sm font-normal text-stone">
                   {localSettings.maxTokens}
                 </span>
               </div>
@@ -168,7 +170,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
                 step={50}
                 disabled
               />
-              <p className="text-xs text-gray-700 mt-1">
+              <p className="text-sm text-stone mt-1 font-light">
                 Maximum length of generated responses - Coming soon
               </p>
             </div>
@@ -178,15 +180,15 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
             <Button
               variant="outline"
               onClick={handleReset}
-              className="border-gray-400 text-gray-900 hover:bg-gray-100 hover:border-gray-500"
+              className="border-2 border-charcoal text-charcoal hover:bg-cream hover:border-charcoal uppercase tracking-wide text-xs font-normal"
             >
-              Reset to Defaults
+              Reset
             </Button>
             <Button
               onClick={handleSave}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-charcoal hover:bg-charcoal-light text-cream border-2 border-charcoal uppercase tracking-wide text-xs font-normal"
             >
-              Save Changes
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

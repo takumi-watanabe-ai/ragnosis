@@ -1,16 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   SimpleChatInterface,
   SimpleChatInterfaceHandle,
 } from "@/components/SimpleChatInterface";
 import { QuickQuestions } from "@/components/QuickQuestions";
 import { Settings, type SettingsConfig } from "@/components/Settings";
-import { Menu, PlusCircle, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 function ChatPageContent() {
   const searchParams = useSearchParams();
@@ -33,25 +32,13 @@ function ChatPageContent() {
   };
 
   return (
-    <div className="flex h-screen bg-white">
+    <div className="flex h-screen bg-cream">
       {/* Sidebar - Desktop */}
-      <aside className="hidden md:flex md:flex-col w-64 border-r border-gray-200 bg-white">
-        <div className="px-4 py-3 border-b border-gray-200">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-sm font-bold leading-none">
-                R
-              </span>
-            </div>
-            <span className="text-lg font-bold text-gray-900 leading-none flex items-center">
-              RAGnosis
-            </span>
-          </Link>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
+      <aside className="hidden md:flex md:flex-col w-64 border-r border-stone-border bg-cream">
+        <div className="flex-1 overflow-y-auto px-6 py-8">
           <QuickQuestions onSelectQuestion={handleQuestionSelect} />
         </div>
-        <div className="p-4 border-t border-gray-200">
+        <div className="px-6 py-6 border-t border-stone-border">
           <Settings settings={settings} onSettingsChange={setSettings} />
         </div>
       </aside>
@@ -60,35 +47,22 @@ function ChatPageContent() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-charcoal/60"
             onClick={() => setSidebarOpen(false)}
           />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 flex flex-col">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-              <Link
-                href="/"
-                className="flex items-center gap-2 hover:opacity-80"
-              >
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-sm font-bold leading-none">
-                    R
-                  </span>
-                </div>
-                <span className="text-lg font-bold text-gray-900 leading-none flex items-center">
-                  RAGnosis
-                </span>
-              </Link>
+          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-cream border-r border-stone-border flex flex-col">
+            <div className="px-6 py-6 border-b border-stone-border flex items-center justify-end">
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="p-1 hover:bg-gray-100 rounded text-gray-700"
+                className="text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider font-normal"
               >
-                <X className="h-5 w-5" />
+                Close
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto px-6 py-8">
               <QuickQuestions onSelectQuestion={handleQuestionSelect} />
             </div>
-            <div className="p-4 border-t border-gray-200">
+            <div className="px-6 py-6 border-t border-stone-border">
               <Settings settings={settings} onSettingsChange={setSettings} />
             </div>
           </aside>
@@ -98,29 +72,31 @@ function ChatPageContent() {
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="border-b border-gray-200 bg-white px-4 py-3">
+        <header className="border-b border-stone-border bg-cream px-6 py-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setSidebarOpen(true)}
-                className="md:hidden"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-            </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleNewChat}
-                className="gap-2 border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-800 font-medium"
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider"
               >
-                <PlusCircle className="h-4 w-4" />
-                <span className="hidden sm:inline">New Chat</span>
-              </Button>
+                Menu
+              </button>
+              <Link href="/" className="hover:opacity-70 transition-opacity">
+                <Image
+                  src="/logo-chat.svg"
+                  alt="RAGnosis"
+                  width={56}
+                  height={56}
+                  className="h-14 w-14"
+                />
+              </Link>
             </div>
+            <button
+              onClick={handleNewChat}
+              className="text-xs text-charcoal hover:opacity-60 transition-opacity uppercase tracking-wider"
+            >
+              New Chat
+            </button>
           </div>
         </header>
 
@@ -138,5 +114,15 @@ function ChatPageContent() {
 }
 
 export default function ChatPage() {
-  return <ChatPageContent />;
+  return (
+    <Suspense
+      fallback={
+        <div className="h-screen bg-cream flex items-center justify-center">
+          Loading...
+        </div>
+      }
+    >
+      <ChatPageContent />
+    </Suspense>
+  );
 }

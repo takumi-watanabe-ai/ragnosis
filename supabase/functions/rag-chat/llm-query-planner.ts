@@ -48,9 +48,8 @@ Rules:
 - "top/best X" → ranking (no author/owner unless explicitly mentioned)
 - "X vs Y" → comparison (extract names)
 - "how/what/why" → semantic
-- "models from [author]" or "repos by [owner]" → ranking with author/owner filter
-- Extract author/owner ONLY if explicitly mentioned by name in query
-- Match category if mentioned
+- Extract category if mentioned in query
+- Extract author/owner ONLY if explicitly mentioned by name
 
 JSON:
 {
@@ -99,6 +98,18 @@ JSON:
 
     const decision: PlannerDecision = JSON.parse(content)
 
+    // Auto-extract category: if query contains any available category name, use it
+    if (!decision.category && meta.categories) {
+      const queryLower = query.toLowerCase()
+      const matchedCategory = meta.categories.find((cat: string) =>
+        queryLower.includes(cat.toLowerCase().replace('_', ' ')) ||
+        queryLower.includes(cat.toLowerCase())
+      )
+      if (matchedCategory) {
+        decision.category = matchedCategory
+      }
+    }
+
     console.log('🎯 Plan:', decision)
 
     return routeQuery(decision, query, top_k)
@@ -144,6 +155,7 @@ function routeQuery(decision: PlannerDecision, query: string, limit: number): Qu
       data_sources: [{
         source,
         params: {
+          query,  // Pass original query for reranking
           limit,
           categories: category ? [category] : undefined,
           authors: author && target === 'models' ? [author] : undefined,

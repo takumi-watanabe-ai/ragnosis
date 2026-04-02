@@ -4,6 +4,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import type { SearchResult } from '../types.ts'
+import { CrossEncoderReranker } from '../reranker.ts'
+import { config } from '../config.ts'
 
 interface ReposFilters {
   categories?: string[]
@@ -11,26 +13,40 @@ interface ReposFilters {
 }
 
 export class ReposRepository {
-  constructor(private supabase: ReturnType<typeof createClient>) {}
+  private reranker: CrossEncoderReranker
+
+  constructor(private supabase: ReturnType<typeof createClient>) {
+    this.reranker = new CrossEncoderReranker()
+  }
 
   /**
-   * Get top repos by stars with optional filters
+   * Get top repos by stars with optional filters and reranking
    */
-  async getTopByStars(limit: number, filters?: ReposFilters): Promise<SearchResult[]> {
-    console.log(`📊 Top repos by stars`)
+  async getTopByStars(
+    query: string,
+    limit: number,
+    filters?: ReposFilters
+  ): Promise<SearchResult[]> {
+    console.log(`📊 Top repos by stars with reranking`)
 
     // Try with filters if provided
     const category = filters?.categories?.[0] || null
     const owner = filters?.owners?.[0] || null
-    const results = await this.query(limit, category, owner)
+
+    // Fetch more candidates for reranking
+    const candidateCount = config.ranking.candidateCount
+    const candidates = await this.query(candidateCount, category, owner)
 
     // Fallback if filtered query returned nothing
-    if (results.length === 0 && (category || owner)) {
+    if (candidates.length === 0 && (category || owner)) {
       console.log(`⚠️  No repos with filters, falling back to unfiltered`)
-      return await this.query(limit, null, null)
+      const unfilteredCandidates = await this.query(candidateCount, null, null)
+      return await this.reranker.rerank(query, unfilteredCandidates, config.ranking.finalResultCount)
     }
 
-    return results
+    // For ranking queries, SQL order (by stars) is already correct
+    // No need to rerank - just return top N
+    return candidates.slice(0, config.ranking.finalResultCount)
   }
 
   /**

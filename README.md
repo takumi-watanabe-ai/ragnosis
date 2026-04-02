@@ -2,216 +2,137 @@
 
 > **AI-powered market intelligence for RAG technology decisions**
 
-Making smart decisions about RAG technology? You need both the numbers (what's popular) and the know-how (what actually works). RAGnosis gives you both: quantitative metrics from HuggingFace and GitHub, plus expert knowledge from 4,000+ blog articles from teams who've built RAG systems in production.
+A production RAG system that answers questions about RAG technology itself—combining quantitative metrics from HuggingFace and GitHub with expert knowledge from 4,000+ blog articles. Built to showcase sophisticated RAG patterns that go beyond basic vector search.
 
-**Status:** 🚀 Production Ready
+**What makes this interesting:** Most RAG tutorials do naive vector search and call it done. This system demonstrates query planning, hybrid search, smart reranking, and cost optimization—techniques you need for production systems.
 
 ---
 
 ## What Makes It Smart
 
-Most RAG systems just do vector search and call it a day. This one actually thinks about your question first:
+**Query Planning** - Before searching anything, an LLM analyzes what you're actually asking:
+- Market data questions → Route to models/repos with metrics
+- Implementation questions → Route to blog articles with code examples
+- Comparisons → Fetch data from multiple sources, synthesize side-by-side
+- Troubleshooting → Match problem patterns, return diagnostic guides
 
-**Smart Query Understanding** - Before searching anything, an LLM figures out what you're really asking:
-- Are you looking for market data? ("What are the top embedding models?")
-- Need implementation help? ("How do I fix retrieval accuracy?")
-- Comparing options? ("LangChain vs LlamaIndex")
-- The system then routes to the right data source automatically
-
-**Hybrid Search** - Combines two search approaches because sometimes you need both:
-- Vector search finds conceptually similar content ("retrieval quality" matches "improving accuracy")
+**Hybrid Search** - Combines complementary approaches because neither works alone:
+- Vector search finds conceptual matches ("retrieval quality" ≈ "improving accuracy")
 - Keyword search finds exact matches ("Supabase/gte-small" finds that specific model)
 - Searches across blog articles, HuggingFace models, and GitHub repos simultaneously
 
-**Smart Reranking** - Not all "relevant" results are actually relevant:
-- Custom BM25 algorithm scores results based on how many query terms they match
-- Heavily boosts results where terms appear in the title (10x multiplier)
-- Penalizes results missing important query terms (squared penalty)
-- Result: "Supabase/gte-small" ranks higher than generic embedding articles
+**Smart Reranking** - Initial search returns candidates, BM25 reranking finds what matters:
+- Scores based on query term coverage (not just vector similarity)
+- 10x boost for title matches (signals high relevance)
+- Squared penalty for missing important terms (filters out partial matches)
+- Example: "Supabase/gte-small" query ranks that exact model above generic embedding articles
 
-**Answer Generation** - Different questions need different answer styles:
-- Market questions get ranked lists with metrics
-- Implementation questions get step-by-step guides
-- Troubleshooting gets problem diagnosis + solutions
-- Comparisons get side-by-side analysis
-
----
-
-## How It Works
-
-**3-Step Architecture:**
-
-```
-Query → Plan (LLM) → Execute (Parallel Search) → Synthesize (LLM) → Answer
-```
-
-1. **Plan**: LLM analyzes query and routes to appropriate data sources
-2. **Execute**: Search blogs + models/repos in parallel, rerank with BM25, enrich top results
-3. **Synthesize**: LLM generates structured answer with citations
-
-**Key Features:**
-- Searches 3,858 blog chunks + 61 models/repos simultaneously
-- Cost-optimized: ~60% token reduction vs naive approach
-- Returns top 5 results with full metadata enrichment
-
-**The Stack:**
-- **Runtime**: Deno (Supabase Edge Functions)
-- **Database**: PostgreSQL with pgvector extension + GIN full-text indexes
-- **LLM**: Ollama qwen2.5:3b (runs locally for query analysis & answer generation)
-- **Embeddings**: Supabase.ai.Session using gte-small (384 dimensions)
-- **Data Pipeline**: Python scripts + GitHub Actions (automated daily/weekly)
+**Context-Aware Answers** - Different questions need different answer formats:
+- Market questions → Ranked lists with GitHub stars, HuggingFace downloads, trend data
+- How-to questions → Step-by-step guides with code snippets
+- Troubleshooting → Problem diagnosis + actionable solutions
+- Comparisons → Side-by-side feature/performance analysis
 
 ---
 
-## Quick Start
+## Architecture & Design Decisions
 
-### Prerequisites
+**The Three-Stage Pipeline:**
 
-```bash
-# Install Supabase CLI
-brew install supabase/tap/supabase
+1. **Query Planning** - LLM analyzes the question to understand intent before searching
+2. **Parallel Execution** - Simultaneous searches across different data sources, then rerank and enrich
+3. **Answer Synthesis** - LLM generates structured responses with proper citations
 
-# Install Python dependencies
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+**Why This Approach?**
 
-### 1. Start Supabase
+Most RAG systems jump straight to vector search. That fails for questions like "What are the top embedding models?" because:
+- Vector search finds *similar* content, not ranked lists
+- You need structured data (GitHub stars, HuggingFace downloads) not just blog text
+- Different questions need different data sources
 
-```bash
-supabase init
-supabase start  # Copy the API URL and keys!
-```
+By having the LLM analyze the query first, the system routes to the right data and formats answers appropriately.
 
-### 2. Setup Database
+**Cost Optimization:**
 
-```bash
-# Apply schema
-supabase db reset
-```
+Instead of stuffing all search results (with full metadata) into the LLM context, this system:
+1. Does initial search with minimal data (title + content only)
+2. Reranks to find the actual top 5
+3. Only then enriches those 5 with expensive SQL joins for full metadata
 
-### 3. Configure Environment
-
-```bash
-cp .env.example .env
-# Edit .env with your Supabase credentials
-```
-
-### 4. Fetch & Ingest Data
-
-```bash
-# Fetch market data (HuggingFace, GitHub, Google Trends)
-make pipeline
-
-# One-time: Scrape ALL blog articles from sitemaps
-make scrape-sitemap
-```
-
-### 5. Verify Data
-
-```bash
-# Open Supabase Studio
-make supabase-studio
-
-# Check tables:
-# - hf_models (~400 rows)
-# - github_repos (~400 rows)
-# - blog_articles (~4,000 rows)
-```
+Result: ~60% token reduction compared to enriching everything upfront.
 
 ---
 
-## Development Commands
+## Key Implementation Highlights
 
-```bash
-# Setup
-make setup              # Full local setup (Supabase + Ollama)
+**Dual Vector Collections:**
+- Blog articles: 3,858 chunks optimized for semantic search
+- Models/Repos: 61 entries with rich metadata (stars, downloads, trends)
+- Single query searches both collections in parallel via PostgreSQL CTEs
 
-# Data collection
-make pipeline           # Fetch HF/GitHub/Trends data
-make scrape-sitemap     # Comprehensive blog scraping
-make embed              # Create embeddings for new data
+**Full-Text + Vector Indexes:**
+```sql
+-- Vector search with pgvector
+CREATE INDEX ON blog_chunks USING ivfflat (embedding vector_cosine_ops);
 
-# Development
-make web                # Start Next.js modern web UI (recommended)
-make chat               # Start Streamlit chat interface (legacy)
-make supabase-studio    # Open database UI
+-- Keyword search with GIN
+CREATE INDEX ON blog_chunks USING gin (to_tsvector('english', content));
 ```
 
----
+**BM25 Reranking in TypeScript:**
+- Custom implementation that understands multi-word queries
+- Title boosting (10x) + term coverage scoring
+- Runs post-retrieval to refine top candidates
 
-## Automated Data Collection
-
-The system updates automatically via GitHub Actions:
-
-**Daily:**
-- 8:00 AM UTC - Market data (HuggingFace models, GitHub repos, Google Trends)
-- 10:00 AM UTC - Vector embeddings (creates embeddings for any new data)
-
-**Weekly:**
-- Sunday 2:00 AM UTC - Blog articles (comprehensive sitemap scraping)
-
-**Setup:**
-Add these secrets in GitHub repo → Settings → Secrets:
-- `SUPABASE_URL` - Your production Supabase URL
-- `SUPABASE_SERVICE_KEY` - Service role key
-- `HUGGINGFACE_API_KEY` - HuggingFace API token
-- `GH_TOKEN` - GitHub personal access token
-
----
-
-## Roadmap
-
-**✅ Built:**
-- 3-step agentic RAG with query planning
-- Dual vector search (blogs + models/repos)
-- Post-rerank enrichment with SQL metadata
-- Cost-optimized token usage (~60% reduction)
-- Interactive Streamlit UI with example questions
-- Automated data collection (3,858 blog chunks)
-
-**🚧 Next:**
-- Cross-encoder reranking
-- Semantic caching
-- ArXiv + HackerNews integration
-- Analytics dashboard
-
-**✅ Just Added:**
-- Modern Next.js frontend with assistant-ui
-- Minimalist landing page
-- Quick question buttons by category
-- Responsive mobile/desktop design
-
----
-
-## Documentation
-
-- [Example Queries](docs/example_queries.md) - Query patterns & testing scenarios
-- [Database Schema](supabase/migrations/) - PostgreSQL + pgvector design
-- [Edge Function](supabase/functions/rag-chat/) - RAG implementation details
+**Automated Data Pipeline:**
+- Daily: HuggingFace model stats, GitHub repo metrics, Google Trends
+- Weekly: Blog scraping from 15+ RAG engineering blogs
+- Embeddings generated on-demand for new content
+- Fully automated via GitHub Actions
 
 ---
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| **Runtime** | Deno (Supabase Edge Functions) |
-| **Database** | PostgreSQL + pgvector + GIN indexes |
-| **LLM** | Ollama qwen2.5:3b-instruct |
-| **Embeddings** | Supabase.ai.Session (gte-small, 384-dim) |
-| **Vector Search** | pgvector cosine similarity |
-| **Keyword Search** | PostgreSQL full-text (ts_rank_cd) |
-| **Reranking** | Custom BM25 (TypeScript) |
-| **Data Pipeline** | Python 3.13 + GitHub Actions |
+| Component | Choice | Why |
+|-----------|--------|-----|
+| **Runtime** | Deno (Supabase Edge Functions) | Fast cold starts, TypeScript native, easy local dev |
+| **Database** | PostgreSQL + pgvector | Simpler than dedicated vector DBs, powerful for hybrid search |
+| **Vector Search** | pgvector cosine similarity | Native Postgres extension, handles 384-dim embeddings efficiently |
+| **Keyword Search** | PostgreSQL GIN full-text | Fast exact matching, combines naturally with vector search |
+| **LLM** | Ollama qwen2.5:3b-instruct | Small model sufficient for query analysis, runs locally |
+| **Embeddings** | Supabase.ai.Session (gte-small) | 384 dimensions, good quality/speed tradeoff |
+| **Reranking** | Custom BM25 (TypeScript) | Better than pure vector similarity for keyword-heavy queries |
+| **Frontend** | Next.js + assistant-ui | Modern React streaming UI, Vercel-deployable |
+| **Data Pipeline** | Python + GitHub Actions | Flexible scraping, automated scheduling |
 
 ---
 
-## License
+## What I'd Build Next
 
-MIT
+**Implemented:**
+- ✅ Query planning with LLM routing
+- ✅ Dual vector search (blogs + models/repos)
+- ✅ Custom BM25 reranking
+- ✅ Post-rerank metadata enrichment
+- ✅ Automated data collection (4K+ articles)
+- ✅ Modern Next.js frontend
+
+**Next Steps:**
+- Cross-encoder reranking (Cohere or local model)
+- Semantic caching for common queries
+- ArXiv papers + HackerNews discussions
+- Analytics dashboard (query patterns, answer quality)
+- A/B testing framework for RAG experiments
 
 ---
 
-**Built to showcase:** Production RAG systems, LLM-powered query understanding, Hybrid search architectures, Automated data pipelines
+## Documentation
+
+- [Example Queries](docs/example_queries.md) - Query patterns & expected routing behavior
+- [Database Schema](supabase/migrations/) - PostgreSQL + pgvector design
+- [Edge Function](supabase/functions/rag-chat/) - RAG implementation details
+
+---
+
+**Built to showcase:** Production RAG patterns • Query understanding • Hybrid search • Cost optimization • Automated data pipelines

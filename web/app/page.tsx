@@ -1,98 +1,114 @@
 import Link from "next/link";
-import { ArrowRight, Search, TrendingUp, Lightbulb, Users } from "lucide-react";
+import Image from "next/image";
+import { Search, TrendingUp, Lightbulb, Users } from "lucide-react";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+    <div className="min-h-screen bg-cream">
       {/* Header */}
-      <header className="border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <header className="relative top-0 left-0 right-0 z-10 border-b border-stone-border bg-cream">
+        <div className="px-6 sm:px-12 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white text-sm font-bold">R</span>
-              </div>
-              <h1 className="text-xl font-bold text-gray-900">RAGnosis</h1>
-            </div>
-            <Link
-              href="/chat"
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-            >
-              Launch Chat
+            <Link href="/" className="hover:opacity-70 transition-opacity">
+              <span className="text-xs sm:text-sm font-light tracking-[0.2em] text-charcoal uppercase">
+                RAGnosis
+              </span>
             </Link>
+            <div className="flex items-center gap-4 sm:gap-6">
+              <Link
+                href="/chat"
+                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
+              >
+                Launch
+              </Link>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="pt-20 pb-16 text-center">
-          <h2 className="text-5xl sm:text-6xl font-bold tracking-tight text-gray-900 mb-6">
-            AI-Powered RAG Intelligence
-          </h2>
-          <p className="text-xl text-gray-700 max-w-3xl mx-auto mb-8">
-            Making smart decisions about RAG technology? Get quantitative
-            metrics from HuggingFace and GitHub, plus expert knowledge from
-            4,000+ blog articles.
+      {/* Hero Section with Logo */}
+      <main className="relative px-6 sm:px-12">
+        <div className="py-16 sm:py-24 md:py-32 text-center">
+          {/* Logo/Icon */}
+          <div className="flex justify-center mb-8 sm:mb-12">
+            <Image
+              src="/logo.svg"
+              alt="RAGnosis Logo"
+              width={160}
+              height={160}
+              className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40"
+              priority
+            />
+          </div>
+
+          {/* Title */}
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-light tracking-tight text-charcoal mb-6 sm:mb-8 uppercase">
+            RAGnosis
+          </h1>
+
+          {/* Description */}
+          <p className="text-base sm:text-lg md:text-xl text-charcoal mb-10 sm:mb-12 leading-relaxed max-w-2xl mx-auto font-light">
+            Diagnose your RAG
           </p>
+
+          {/* CTA */}
           <Link
             href="/chat"
-            className="inline-flex items-center px-6 py-3 text-lg font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+            className="inline-block px-6 sm:px-8 py-3 text-xs sm:text-sm uppercase tracking-[0.15em] border-2 border-charcoal text-charcoal hover:bg-charcoal hover:text-cream transition-all font-normal"
           >
-            Start Asking Questions
-            <ArrowRight className="ml-2 h-5 w-5" />
+            Start Exploring
           </Link>
         </div>
 
         {/* Features Grid */}
-        <div className="py-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="py-12 sm:py-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 max-w-7xl mx-auto">
           <FeatureCard
-            icon={<Search className="h-6 w-6" />}
+            icon={<Search className="h-4 w-4 sm:h-5 sm:w-5" />}
             title="Market Intelligence"
             description="Real-time data from HuggingFace models, GitHub repos, and Google Trends"
           />
           <FeatureCard
-            icon={<TrendingUp className="h-6 w-6" />}
+            icon={<TrendingUp className="h-4 w-4 sm:h-5 sm:w-5" />}
             title="Expert Knowledge"
             description="Insights from 4,000+ blog articles by teams who built RAG in production"
           />
           <FeatureCard
-            icon={<Lightbulb className="h-6 w-6" />}
+            icon={<Lightbulb className="h-4 w-4 sm:h-5 sm:w-5" />}
             title="Smart Answers"
             description="LLM-powered query understanding with hybrid search and reranking"
           />
           <FeatureCard
-            icon={<Users className="h-6 w-6" />}
+            icon={<Users className="h-4 w-4 sm:h-5 sm:w-5" />}
             title="For Decision Makers"
             description="Built for engineers, CTOs, architects, and hiring managers"
           />
         </div>
 
         {/* Quick Examples */}
-        <div className="py-16 border-t border-gray-200 ">
-          <h3 className="text-2xl font-bold text-center mb-8 text-gray-900">
-            Ask Anything About RAG
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
+        <div className="py-12 sm:py-16 border-t border-stone-border max-w-7xl  mx-auto">
+          <h2 className="text-sm sm:text-base font-normal text-center mb-8 sm:mb-10 text-charcoal uppercase tracking-[0.15em]">
+            Example Questions
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <ExampleQuestion text="What are the top embedding models?" />
+            <ExampleQuestion text="Most popular RAG frameworks on GitHub?" />
             <ExampleQuestion text="LangChain vs LlamaIndex?" />
-            <ExampleQuestion text="How to improve retrieval accuracy?" />
-            <ExampleQuestion text="Best vector database for small projects?" />
-            <ExampleQuestion text="Why is my RAG hallucinating?" />
+            <ExampleQuestion text="What are the best reranking models?" />
+            <ExampleQuestion text="How does RAG work?" />
             <ExampleQuestion text="What's trending in RAG right now?" />
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gray-200  mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center text-sm text-gray-700 ">
-            <p>
+      <footer className="relative border-t border-stone-border mt-12 sm:mt-20 bg-cream">
+        <div className="px-6 sm:px-12 py-8 sm:py-10">
+          <div className="text-xs sm:text-sm text-stone font-light">
+            <p className="mb-3">
               Built to showcase production RAG systems, LLM-powered query
               understanding, and hybrid search architectures.
             </p>
-            <p className="mt-2">© 2026 RAGnosis. Open Source.</p>
+            <p className="text-xs">© 2026 RAGnosis</p>
           </div>
         </div>
       </footer>
@@ -110,10 +126,14 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="p-6 rounded-lg border border-gray-200  bg-white ">
-      <div className="mb-3 text-gray-900 ">{icon}</div>
-      <h4 className="text-lg font-semibold mb-2 text-gray-900">{title}</h4>
-      <p className="text-sm text-gray-600 ">{description}</p>
+    <div className="p-4 sm:p-5 border border-stone-border bg-white">
+      <div className="mb-3 text-charcoal">{icon}</div>
+      <h3 className="text-xs sm:text-sm font-normal mb-2 text-charcoal uppercase tracking-wide">
+        {title}
+      </h3>
+      <p className="text-xs sm:text-sm text-stone leading-relaxed font-light">
+        {description}
+      </p>
     </div>
   );
 }
@@ -122,7 +142,7 @@ function ExampleQuestion({ text }: { text: string }) {
   return (
     <Link
       href={`/chat?q=${encodeURIComponent(text)}`}
-      className="p-4 rounded-lg border border-gray-200  bg-white  hover:border-gray-300  transition-colors text-sm text-gray-900"
+      className="block p-3 sm:p-4 border border-stone-border bg-white hover:bg-charcoal hover:text-cream hover:border-charcoal transition-all text-xs sm:text-sm text-charcoal font-light"
     >
       {text}
     </Link>

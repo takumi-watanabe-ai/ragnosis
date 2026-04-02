@@ -13,16 +13,18 @@ export function SourceCard({ source }: SourceCardProps) {
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="block p-3 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors"
+      className="block py-3 border-b border-stone-border hover:border-charcoal transition-colors group"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-baseline justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate mb-1 text-gray-900">
+          <div className="text-base font-light mb-1 text-charcoal group-hover:opacity-60 transition-opacity">
             {source.metadata.title}
           </div>
-          <div className="text-xs text-gray-600 truncate">{domain}</div>
+          <div className="text-xs text-stone uppercase tracking-wider font-normal">
+            {domain}
+          </div>
         </div>
-        <ExternalLink className="h-4 w-4 text-gray-500 flex-shrink-0 mt-0.5" />
+        <ExternalLink className="h-3.5 w-3.5 text-stone flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </a>
   );

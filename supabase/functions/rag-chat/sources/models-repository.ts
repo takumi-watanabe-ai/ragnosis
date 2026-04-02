@@ -4,6 +4,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import type { SearchResult } from '../types.ts'
+import { CrossEncoderReranker } from '../reranker.ts'
+import { config } from '../config.ts'
 
 interface ModelsFilters {
   categories?: string[]
@@ -11,26 +13,40 @@ interface ModelsFilters {
 }
 
 export class ModelsRepository {
-  constructor(private supabase: ReturnType<typeof createClient>) {}
+  private reranker: CrossEncoderReranker
+
+  constructor(private supabase: ReturnType<typeof createClient>) {
+    this.reranker = new CrossEncoderReranker()
+  }
 
   /**
-   * Get top models by downloads with optional filters
+   * Get top models by downloads with optional filters and reranking
    */
-  async getTopByDownloads(limit: number, filters?: ModelsFilters): Promise<SearchResult[]> {
-    console.log(`📊 Top models by downloads`)
+  async getTopByDownloads(
+    query: string,
+    limit: number,
+    filters?: ModelsFilters
+  ): Promise<SearchResult[]> {
+    console.log(`📊 Top models by downloads with reranking`)
 
     // Try with filters if provided
     const category = filters?.categories?.[0] || null
     const author = filters?.authors?.[0] || null
-    const results = await this.query(limit, category, author)
+
+    // Fetch more candidates for reranking
+    const candidateCount = config.ranking.candidateCount
+    const candidates = await this.query(candidateCount, category, author)
 
     // Fallback if filtered query returned nothing
-    if (results.length === 0 && (category || author)) {
+    if (candidates.length === 0 && (category || author)) {
       console.log(`⚠️  No results with filters, falling back to unfiltered query`)
-      return await this.query(limit, null, null)
+      const unfilteredCandidates = await this.query(candidateCount, null, null)
+      return await this.reranker.rerank(query, unfilteredCandidates, config.ranking.finalResultCount)
     }
 
-    return results
+    // For ranking queries, SQL order (by downloads) is already correct
+    // No need to rerank - just return top N
+    return candidates.slice(0, config.ranking.finalResultCount)
   }
 
   /**

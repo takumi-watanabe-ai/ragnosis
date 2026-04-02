@@ -63,5 +63,14 @@ evaluation/results/
 # Serena
 .serena/
 
+# Frontend build artifacts
+web/.eslintcache
+web/.next/
+web/node_modules/
+web/out/
+
+# Playwright MCP
+.playwright-mcp/
+
 Claude.mk
 Claude.md

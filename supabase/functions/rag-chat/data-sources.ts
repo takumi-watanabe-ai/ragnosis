@@ -49,16 +49,24 @@ export async function executeDataSource(
 
   switch (query.source) {
     case 'top_models_by_downloads':
-      return await new ModelsRepository(supabase).getTopByDownloads(limit, {
-        categories: query.params?.categories,
-        authors: query.params?.authors
-      })
+      return await new ModelsRepository(supabase).getTopByDownloads(
+        query.params?.query || '',  // Pass query for reranking
+        limit,
+        {
+          categories: query.params?.categories,
+          authors: query.params?.authors
+        }
+      )
 
     case 'top_repos_by_stars':
-      return await new ReposRepository(supabase).getTopByStars(limit, {
-        categories: query.params?.categories,
-        owners: query.params?.owners
-      })
+      return await new ReposRepository(supabase).getTopByStars(
+        query.params?.query || '',  // Pass query for reranking
+        limit,
+        {
+          categories: query.params?.categories,
+          owners: query.params?.owners
+        }
+      )
 
     case 'search_trends':
       return await new TrendsRepository(supabase).getTopTrends(limit)

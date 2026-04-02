@@ -15,10 +15,12 @@ export async function generateAnswer(
   results: SearchResult[],
   intent: QueryIntent,
 ): Promise<string> {
-  // For market intelligence list queries, use direct formatting (no LLM hallucination)
+  // For market intelligence list queries, use LLM with strict grounding
   const isListQuery = /\b(top|best|popular|trending|list)\b/i.test(query);
   if (intent === "market_intelligence" && isListQuery && results.length > 0) {
-    return formatMarketIntelligence(results);
+    // Use LLM for context, but with strict anti-hallucination rules
+    const prompt = buildMarketIntelligencePrompt(query, results);
+    return await generateWithLLM(prompt);
   }
 
   // Otherwise use LLM to synthesize answer
@@ -74,7 +76,102 @@ export async function generateAnswer(
 }
 
 /**
- * Direct formatting for market intelligence (no LLM to prevent hallucination)
+ * Build prompt for market intelligence queries with strict grounding
+ */
+function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): string {
+  const docType = results[0]?.doc_type;
+  let context = "TOP RESULTS:\n\n";
+
+  results.forEach((item, i) => {
+    const num = i + 1;
+    const cleanName = item.name.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim();
+
+    context += `${num}. ${cleanName}\n`;
+    context += `   URL: ${item.url}\n`;
+
+    if (docType === "hf_model") {
+      if (item.downloads) context += `   Downloads: ${item.downloads.toLocaleString()}\n`;
+      if (item.likes) context += `   Likes: ${item.likes.toLocaleString()}\n`;
+      if (item.author) context += `   Author: ${item.author}\n`;
+      if (item.task) context += `   Task: ${item.task}\n`;
+      if (item.description) context += `   Description: ${item.description.substring(0, 200)}\n`;
+    } else if (docType === "github_repo") {
+      if (item.stars) context += `   Stars: ${item.stars.toLocaleString()}\n`;
+      if (item.forks) context += `   Forks: ${item.forks.toLocaleString()}\n`;
+      if (item.owner) context += `   Owner: ${item.owner}\n`;
+      if (item.language) context += `   Language: ${item.language}\n`;
+      if (item.description) context += `   Description: ${item.description.substring(0, 200)}\n`;
+    }
+    context += "\n";
+  });
+
+  return `${context}
+
+Question: ${query}
+
+ANSWER REQUIREMENTS:
+
+1. For EACH model/repo, provide:
+   - Name as clickable link: **[Name](URL)**
+   - Key metrics (downloads/stars/likes)
+   - What it's good for (from description/task)
+   - When to use it (based on description)
+
+2. After the list, add "Choosing the Right One":
+   - Quick decision guide based on use cases from descriptions above
+   - Only use information explicitly in the data above
+
+3. STRICT RULES:
+   - NEVER mention items not in the list above
+   - NEVER invent features or capabilities
+   - Base ALL context on the descriptions provided
+
+Answer format:
+## Top [Models/Repos]
+
+1. **[Name](URL)** - [Downloads/Stars]
+   - **What**: [From description]
+   - **Best for**: [From task/description]
+
+## Choosing the Right One
+- [Decision guide from data above only]
+
+Answer:`;
+}
+
+/**
+ * Generate answer with LLM
+ */
+async function generateWithLLM(prompt: string): Promise<string> {
+  try {
+    const response = await fetch(`${config.llm.url}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: config.llm.model,
+        prompt,
+        stream: false,
+        options: {
+          temperature: 0.3,
+          num_predict: 500,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.response.trim();
+  } catch (error) {
+    console.error("❌ LLM generation failed:", error);
+    return "Sorry, I encountered an error generating the answer.";
+  }
+}
+
+/**
+ * Direct formatting for market intelligence (fallback, not used currently)
  */
 function formatMarketIntelligence(results: SearchResult[]): string {
   const docType = results[0]?.doc_type;
