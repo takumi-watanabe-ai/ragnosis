@@ -3,7 +3,6 @@
 import { useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import {
   SimpleChatInterface,
   SimpleChatInterfaceHandle,
@@ -74,7 +73,7 @@ function ChatPageContent() {
         {/* Header */}
         <header className="border-b border-stone-border bg-cream px-6 py-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="md:hidden text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider"
@@ -82,13 +81,15 @@ function ChatPageContent() {
                 Menu
               </button>
               <Link href="/" className="hover:opacity-70 transition-opacity">
-                <Image
-                  src="/logo-chat.svg"
-                  alt="RAGnosis"
-                  width={56}
-                  height={56}
-                  className="h-14 w-14"
-                />
+                <span className="text-sm font-light tracking-[0.2em] text-charcoal uppercase">
+                  RAGnosis
+                </span>
+              </Link>
+              <Link
+                href="/analytics"
+                className="hidden sm:block text-xs text-stone hover:text-charcoal transition-opacity uppercase tracking-wider"
+              >
+                Analytics
               </Link>
             </div>
             <button

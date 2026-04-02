@@ -49,6 +49,7 @@ export const SimpleChatInterface = forwardRef<
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initialQuestionSentRef = useRef(false);
+  const [loadingDots, setLoadingDots] = useState("");
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -63,7 +64,25 @@ export const SimpleChatInterface = forwardRef<
       initialQuestionSentRef.current = true;
       handleSendMessage(initialQuestion);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingDots("");
+      return;
+    }
+
+    const dots = ["", ".", "..", "..."];
+    let index = 0;
+
+    const interval = setInterval(() => {
+      setLoadingDots(dots[index]);
+      index = (index + 1) % dots.length;
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   const handleSendMessage = async (messageText?: string) => {
     const text = messageText || input.trim();
@@ -128,14 +147,12 @@ export const SimpleChatInterface = forwardRef<
     }
   };
 
-  // Get 6 suggested questions from different categories
+  // Curated questions for initial screen - diverse and welcoming
   const suggestedQuestions = [
-    quickQuestions.find((q) => q.category === "embeddings")?.text || "",
-    quickQuestions.find((q) => q.category === "vector-dbs")?.text || "",
-    quickQuestions.find((q) => q.category === "rag-frameworks")?.text || "",
-    quickQuestions.find((q) => q.category === "comparisons")?.text || "",
-    quickQuestions.find((q) => q.category === "how-to")?.text || "",
-    quickQuestions.find((q) => q.category === "troubleshooting")?.text || "",
+    quickQuestions.find((q) => q.id === "how-1")?.text || "", // How does RAG work?
+    quickQuestions.find((q) => q.id === "cmp-1")?.text || "", // When should I use RAG vs fine-tuning?
+    quickQuestions.find((q) => q.id === "how-2")?.text || "", // How do I improve retrieval accuracy?
+    quickQuestions.find((q) => q.id === "trend-1")?.text || "", // What's trending in RAG right now?
   ].filter(Boolean);
 
   return (
@@ -202,11 +219,20 @@ export const SimpleChatInterface = forwardRef<
                               {children}
                             </ol>
                           ),
-                          li: ({ children }) => (
-                            <li className="text-base sm:text-lg text-charcoal leading-relaxed pl-0 before:content-['—'] before:mr-3 before:text-stone">
-                              {children}
-                            </li>
-                          ),
+                          li: ({ children, ...props }) => {
+                            const isOrdered =
+                              props.node?.tagName === "li" &&
+                              props.node?.parent?.tagName === "ol";
+                            return isOrdered ? (
+                              <li className="text-base sm:text-lg text-charcoal leading-relaxed pl-2">
+                                {children}
+                              </li>
+                            ) : (
+                              <li className="text-base sm:text-lg text-charcoal leading-relaxed pl-6 relative before:content-['–'] before:absolute before:left-0 before:text-stone before:font-light">
+                                {children}
+                              </li>
+                            );
+                          },
                           strong: ({ children }) => (
                             <strong className="text-charcoal font-normal">
                               {children}
@@ -319,7 +345,7 @@ export const SimpleChatInterface = forwardRef<
                 RAGnosis
               </div>
               <div className="text-base text-stone italic font-light">
-                Thinking...
+                Ragging{loadingDots}
               </div>
             </div>
           )}

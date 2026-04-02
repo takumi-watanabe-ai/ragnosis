@@ -6,7 +6,6 @@ export interface DocumentResult {
   description: string
   url: string
   doc_type: 'hf_model' | 'github_repo' | 'blog_article'
-  rag_category?: string
   topics?: string[]
   similarity: number
 
@@ -29,7 +28,6 @@ export interface QueryRequest {
   query: string
   top_k?: number
   filter_doc_type?: 'hf_model' | 'github_repo' | 'blog_article'
-  filter_rag_category?: string
 }
 
 export interface QueryResponse {

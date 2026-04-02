@@ -35,12 +35,12 @@ export class ReposRepository {
 
     // Fetch more candidates for reranking
     const candidateCount = config.ranking.candidateCount
-    const candidates = await this.query(candidateCount, category, owner)
+    const candidates = await this.query(candidateCount, owner)
 
     // Fallback if filtered query returned nothing
     if (candidates.length === 0 && (category || owner)) {
       console.log(`⚠️  No repos with filters, falling back to unfiltered`)
-      const unfilteredCandidates = await this.query(candidateCount, null, null)
+      const unfilteredCandidates = await this.query(candidateCount, null)
       return await this.reranker.rerank(query, unfilteredCandidates, config.ranking.finalResultCount)
     }
 
@@ -52,10 +52,9 @@ export class ReposRepository {
   /**
    * Query top repos using get_top_repos RPC function
    */
-  private async query(limit: number, category: string | null, owner: string | null): Promise<SearchResult[]> {
+  private async query(limit: number, owner: string | null): Promise<SearchResult[]> {
     const { data, error } = await this.supabase.rpc('get_top_repos', {
       match_limit: limit,
-      filter_category: category,
       filter_owner: owner
     })
 
@@ -82,8 +81,7 @@ export class ReposRepository {
       stars: r.stars,
       forks: r.forks,
       owner: r.owner,
-      language: r.language,
-      rag_category: r.rag_category
+      language: r.language
     }
   }
 }

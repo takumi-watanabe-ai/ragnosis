@@ -7,6 +7,18 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================================
+-- SCHEMAS
+-- ============================================================================
+CREATE SCHEMA IF NOT EXISTS private;
+CREATE SCHEMA IF NOT EXISTS shared;
+
+-- Grant permissions on schemas
+GRANT USAGE, CREATE ON SCHEMA private TO postgres;
+GRANT USAGE, CREATE ON SCHEMA shared TO postgres;
+GRANT USAGE ON SCHEMA private TO service_role;  -- Edge functions need access to call private functions
+GRANT USAGE ON SCHEMA shared TO service_role;
+
+-- ============================================================================
 -- UNIFIED DOCUMENTS TABLE
 -- Combines ragnosis_docs + blog_docs into single searchable collection
 -- ============================================================================
@@ -20,7 +32,6 @@ CREATE TABLE IF NOT EXISTS documents (
     doc_type TEXT NOT NULL,  -- 'hf_model' | 'github_repo' | 'blog_article'
 
     -- Universal categorization
-    rag_category TEXT,        -- Technical category: 'embedding', 'reranking', 'rag_tool', etc.
     topics TEXT[],            -- GitHub topics / rag topics / tags (universal)
 
     -- Vector search
@@ -76,29 +87,28 @@ CREATE TABLE IF NOT EXISTS documents (
 -- ============================================================================
 
 -- Vector search (primary use case)
-CREATE INDEX documents_embedding_idx ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS documents_embedding_idx ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- Basic lookups and filtering
-CREATE INDEX documents_doc_type_idx ON documents(doc_type);
-CREATE INDEX documents_rag_category_idx ON documents(rag_category);
-CREATE INDEX documents_name_idx ON documents(name);
-CREATE INDEX documents_created_at_idx ON documents(created_at DESC);
-CREATE INDEX documents_snapshot_date_idx ON documents(snapshot_date DESC);
+CREATE INDEX IF NOT EXISTS documents_doc_type_idx ON documents(doc_type);
+CREATE INDEX IF NOT EXISTS documents_name_idx ON documents(name);
+CREATE INDEX IF NOT EXISTS documents_created_at_idx ON documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS documents_snapshot_date_idx ON documents(snapshot_date DESC);
 
 -- Metrics-based sorting (partial indexes for performance)
-CREATE INDEX documents_downloads_idx ON documents(downloads DESC) WHERE downloads IS NOT NULL;
-CREATE INDEX documents_stars_idx ON documents(stars DESC) WHERE stars IS NOT NULL;
-CREATE INDEX documents_ranking_position_idx ON documents(ranking_position) WHERE ranking_position IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_downloads_idx ON documents(downloads DESC) WHERE downloads IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_stars_idx ON documents(stars DESC) WHERE stars IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_ranking_position_idx ON documents(ranking_position) WHERE ranking_position IS NOT NULL;
 
 -- Content metadata (for blogs)
-CREATE INDEX documents_published_at_idx ON documents(published_at DESC) WHERE published_at IS NOT NULL;
-CREATE INDEX documents_content_source_idx ON documents(content_source) WHERE content_source IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_published_at_idx ON documents(published_at DESC) WHERE published_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_content_source_idx ON documents(content_source) WHERE content_source IS NOT NULL;
 
 -- Array fields (GIN indexes for containment queries)
-CREATE INDEX documents_topics_idx ON documents USING GIN(topics) WHERE topics IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_topics_idx ON documents USING GIN(topics) WHERE topics IS NOT NULL;
 
 -- Chunking (for retrieving related chunks)
-CREATE INDEX documents_parent_id_idx ON documents(parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS documents_parent_id_idx ON documents(parent_id) WHERE parent_id IS NOT NULL;
 
 -- ============================================================================
 -- TIME-SERIES TABLES (for historical tracking)
@@ -114,8 +124,6 @@ CREATE TABLE IF NOT EXISTS hf_models (
     downloads BIGINT DEFAULT 0,
     likes INT DEFAULT 0,
     ranking_position INT,
-    is_rag_related BOOLEAN DEFAULT FALSE,
-    rag_category TEXT,
     tags TEXT[],
     url TEXT,
     last_updated TIMESTAMPTZ,
@@ -123,9 +131,8 @@ CREATE TABLE IF NOT EXISTS hf_models (
     PRIMARY KEY (id, snapshot_date)
 );
 
-CREATE INDEX hf_models_snapshot_date_idx ON hf_models(snapshot_date);
-CREATE INDEX hf_models_ranking_position_idx ON hf_models(ranking_position);
-CREATE INDEX hf_models_is_rag_related_idx ON hf_models(is_rag_related, rag_category);
+CREATE INDEX IF NOT EXISTS hf_models_snapshot_date_idx ON hf_models(snapshot_date);
+CREATE INDEX IF NOT EXISTS hf_models_ranking_position_idx ON hf_models(ranking_position);
 
 -- GitHub repos (historical snapshots)
 CREATE TABLE IF NOT EXISTS github_repos (
@@ -139,8 +146,6 @@ CREATE TABLE IF NOT EXISTS github_repos (
     language TEXT,
     topics TEXT[],
     ranking_position INT,
-    is_rag_related BOOLEAN DEFAULT FALSE,
-    rag_category TEXT,
     url TEXT,
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
@@ -148,10 +153,9 @@ CREATE TABLE IF NOT EXISTS github_repos (
     PRIMARY KEY (id, snapshot_date)
 );
 
-CREATE INDEX github_repos_snapshot_date_idx ON github_repos(snapshot_date);
-CREATE INDEX github_repos_ranking_position_idx ON github_repos(ranking_position);
-CREATE INDEX github_repos_is_rag_related_idx ON github_repos(is_rag_related, rag_category);
-CREATE INDEX github_repos_stars_idx ON github_repos(stars DESC);
+CREATE INDEX IF NOT EXISTS github_repos_snapshot_date_idx ON github_repos(snapshot_date);
+CREATE INDEX IF NOT EXISTS github_repos_ranking_position_idx ON github_repos(ranking_position);
+CREATE INDEX IF NOT EXISTS github_repos_stars_idx ON github_repos(stars DESC);
 
 -- Blog articles (source content before chunking)
 CREATE TABLE IF NOT EXISTS blog_articles (
@@ -171,11 +175,11 @@ CREATE TABLE IF NOT EXISTS blog_articles (
     CONSTRAINT valid_scrape_method CHECK (scrape_method IN ('sitemap', 'rss'))
 );
 
-CREATE INDEX blog_articles_source_idx ON blog_articles(source);
-CREATE INDEX blog_articles_published_at_idx ON blog_articles(published_at DESC);
-CREATE INDEX blog_articles_scraped_at_idx ON blog_articles(scraped_at DESC);
-CREATE INDEX blog_articles_tags_idx ON blog_articles USING GIN(tags);
-CREATE INDEX blog_articles_rag_topics_idx ON blog_articles USING GIN(rag_topics);
+CREATE INDEX IF NOT EXISTS blog_articles_source_idx ON blog_articles(source);
+CREATE INDEX IF NOT EXISTS blog_articles_published_at_idx ON blog_articles(published_at DESC);
+CREATE INDEX IF NOT EXISTS blog_articles_scraped_at_idx ON blog_articles(scraped_at DESC);
+CREATE INDEX IF NOT EXISTS blog_articles_tags_idx ON blog_articles USING GIN(tags);
+CREATE INDEX IF NOT EXISTS blog_articles_rag_topics_idx ON blog_articles USING GIN(rag_topics);
 
 -- Google Trends (time-series analytics)
 CREATE TABLE IF NOT EXISTS google_trends (
@@ -190,81 +194,7 @@ CREATE TABLE IF NOT EXISTS google_trends (
     scraped_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX google_trends_keyword_idx ON google_trends(keyword);
-
--- ============================================================================
--- FUNCTIONS
--- ============================================================================
-
--- Unified vector similarity search
-CREATE OR REPLACE FUNCTION match_documents(
-    query_embedding vector(384),
-    match_count INT DEFAULT 5,
-    filter_doc_type TEXT DEFAULT NULL,
-    filter_rag_category TEXT DEFAULT NULL
-)
-RETURNS TABLE (
-    id TEXT,
-    name TEXT,
-    description TEXT,
-    url TEXT,
-    doc_type TEXT,
-    rag_category TEXT,
-    topics TEXT[],
-    text TEXT,
-    similarity FLOAT,
-    -- Metrics
-    downloads BIGINT,
-    stars INT,
-    likes INT,
-    forks INT,
-    ranking_position INT,
-    -- Creators
-    author TEXT,
-    owner TEXT,
-    -- Technical
-    language TEXT,
-    task TEXT,
-    -- Content metadata
-    published_at TIMESTAMPTZ,
-    content_source TEXT,
-    -- Tracking
-    snapshot_date DATE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        documents.id,
-        documents.name,
-        documents.description,
-        documents.url,
-        documents.doc_type,
-        documents.rag_category,
-        documents.topics,
-        documents.text,
-        1 - (documents.embedding <=> query_embedding) AS similarity,
-        documents.downloads,
-        documents.stars,
-        documents.likes,
-        documents.forks,
-        documents.ranking_position,
-        documents.author,
-        documents.owner,
-        documents.language,
-        documents.task,
-        documents.published_at,
-        documents.content_source,
-        documents.snapshot_date
-    FROM documents
-    WHERE
-        (filter_doc_type IS NULL OR documents.doc_type = filter_doc_type)
-        AND (filter_rag_category IS NULL OR documents.rag_category = filter_rag_category)
-    ORDER BY documents.embedding <=> query_embedding
-    LIMIT match_count;
-END;
-$$;
+CREATE INDEX IF NOT EXISTS google_trends_keyword_idx ON google_trends(keyword);
 
 -- ============================================================================
 -- SECURITY: RLS enabled, service role bypasses
@@ -280,13 +210,20 @@ ALTER TABLE google_trends ENABLE ROW LEVEL SECURITY;
 -- Service role bypasses RLS (used by Python scripts and edge functions)
 -- No policies needed = only service role can access (secure by default)
 
+-- Set default privileges for future functions
+-- Private schema: Only service_role and postgres (NOT anon for security)
+ALTER DEFAULT PRIVILEGES IN SCHEMA private GRANT EXECUTE ON FUNCTIONS TO postgres, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA shared GRANT EXECUTE ON FUNCTIONS TO postgres, service_role;
+
+-- Public schema: anon can execute (API layer with validation)
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO postgres, service_role, anon;
+
 -- ============================================================================
 -- COMMENTS
 -- ============================================================================
 
 COMMENT ON TABLE documents IS 'Unified vector search table for HF models, GitHub repos, and blog articles';
 COMMENT ON COLUMN documents.doc_type IS 'Document type: hf_model, github_repo, or blog_article';
-COMMENT ON COLUMN documents.rag_category IS 'Technical category: embedding, reranking, rag_tool, etc.';
 COMMENT ON COLUMN documents.topics IS 'Universal topics field: GitHub topics for repos, rag_topics for blogs';
 COMMENT ON COLUMN documents.downloads IS 'HuggingFace model downloads (NULL for repos/blogs)';
 COMMENT ON COLUMN documents.stars IS 'GitHub repo stars (NULL for models/blogs)';

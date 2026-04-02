@@ -9,6 +9,7 @@ import logging
 import os
 import time
 import base64
+import re
 from datetime import date
 from pathlib import Path
 from typing import List, Dict, Set, Optional, Tuple
@@ -19,8 +20,24 @@ from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import ModelCard
 
+from rag_taxonomy import NOISE_PATTERNS
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def normalize_tags(tags: List[str]) -> List[str]:
+    """Filter out noise tags using unified taxonomy noise patterns."""
+    if not tags:
+        return []
+
+    # Filter using unified NOISE_PATTERNS from taxonomy
+    return [
+        tag
+        for tag in tags
+        if not any(re.match(pattern, tag) for pattern in NOISE_PATTERNS)
+    ]
+
 
 # Load environment variables
 load_dotenv()
@@ -84,24 +101,26 @@ class UnifiedVectorEmbedder:
             return ""
 
         # Get first meaningful paragraph (skip headers, yaml frontmatter, empty lines)
-        lines = text.split('\n')
+        lines = text.split("\n")
         description_lines = []
 
         for line in lines:
             line = line.strip()
             # Skip markdown headers, yaml frontmatter, empty lines
-            if line and not line.startswith('#') and not line.startswith('---'):
+            if line and not line.startswith("#") and not line.startswith("---"):
                 description_lines.append(line)
                 # Get first ~200 chars of meaningful content
-                if len(' '.join(description_lines)) > 200:
+                if len(" ".join(description_lines)) > 200:
                     break
 
         if description_lines:
-            return ' '.join(description_lines)[:500]  # Limit to 500 chars max
+            return " ".join(description_lines)[:500]  # Limit to 500 chars max
 
         return ""
 
-    def _fetch_hf_model_card(self, model_name: str, hf_token: str = None) -> Optional[str]:
+    def _fetch_hf_model_card(
+        self, model_name: str, hf_token: str = None
+    ) -> Optional[str]:
         """
         Fetch full model card (README) from HuggingFace.
 
@@ -127,7 +146,9 @@ class UnifiedVectorEmbedder:
             logger.warning(f"  ✗ Failed to fetch model card for {model_name}: {e}")
             return None
 
-    def _fetch_github_readme(self, repo_name: str, github_token: str = None) -> Optional[str]:
+    def _fetch_github_readme(
+        self, repo_name: str, github_token: str = None
+    ) -> Optional[str]:
         """
         Fetch README from GitHub repository.
 
@@ -143,11 +164,11 @@ class UnifiedVectorEmbedder:
 
             # Prepare headers
             headers = {
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'RAGnosis/1.0 (search indexing)'
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "RAGnosis/1.0 (search indexing)",
             }
             if github_token:
-                headers['Authorization'] = f'token {github_token}'
+                headers["Authorization"] = f"token {github_token}"
 
             # Fetch README
             url = f"https://api.github.com/repos/{repo_name}/readme"
@@ -155,7 +176,7 @@ class UnifiedVectorEmbedder:
 
             if response.status_code == 200:
                 data = response.json()
-                content = base64.b64decode(data['content']).decode('utf-8')
+                content = base64.b64decode(data["content"]).decode("utf-8")
                 logger.debug(f"  ✓ Fetched {len(content)} chars")
                 return content
             elif response.status_code == 404:
@@ -169,7 +190,9 @@ class UnifiedVectorEmbedder:
             logger.warning(f"  ✗ Failed to fetch README for {repo_name}: {e}")
             return None
 
-    def _chunk_text(self, text: str, chunk_size: int = None, overlap: int = None) -> List[str]:
+    def _chunk_text(
+        self, text: str, chunk_size: int = None, overlap: int = None
+    ) -> List[str]:
         """
         Chunk text into overlapping segments.
 
@@ -199,13 +222,13 @@ class UnifiedVectorEmbedder:
             if end < len(text):
                 # Look for paragraph break within last 20% of chunk
                 search_start = end - int(chunk_size * 0.2)
-                para_break = text.rfind('\n\n', search_start, end)
+                para_break = text.rfind("\n\n", search_start, end)
 
                 if para_break != -1:
                     end = para_break + 2  # Include newlines
                 else:
                     # Fall back to sentence boundary
-                    sent_break = text.rfind('. ', search_start, end)
+                    sent_break = text.rfind(". ", search_start, end)
                     if sent_break != -1:
                         end = sent_break + 2
 
@@ -237,14 +260,15 @@ class UnifiedVectorEmbedder:
         if snapshot_date is None:
             snapshot_date = date.today().isoformat()
 
-        logger.info(f"📂 Fetching models from hf_models (snapshot_date: {snapshot_date})...")
+        logger.info(
+            f"📂 Fetching models from hf_models (snapshot_date: {snapshot_date})..."
+        )
 
         try:
             response = (
                 self.client.table("hf_models")
                 .select("*")
                 .eq("snapshot_date", snapshot_date)
-                .eq("is_rag_related", True)
                 .execute()
             )
 
@@ -261,14 +285,15 @@ class UnifiedVectorEmbedder:
         if snapshot_date is None:
             snapshot_date = date.today().isoformat()
 
-        logger.info(f"📂 Fetching repos from github_repos (snapshot_date: {snapshot_date})...")
+        logger.info(
+            f"📂 Fetching repos from github_repos (snapshot_date: {snapshot_date})..."
+        )
 
         try:
             response = (
                 self.client.table("github_repos")
                 .select("*")
                 .eq("snapshot_date", snapshot_date)
-                .eq("is_rag_related", True)
                 .execute()
             )
 
@@ -295,11 +320,15 @@ class UnifiedVectorEmbedder:
             return []
 
     def prepare_documents(
-        self, models: List[Dict], repos: List[Dict], articles: List[Dict], existing_ids: Set[str]
+        self,
+        models: List[Dict],
+        repos: List[Dict],
+        articles: List[Dict],
+        existing_ids: Set[str],
     ) -> Tuple[List[Dict], List[Dict]]:
         """
         Prepare documents for embedding and metadata updates.
-        
+
         Returns:
             (new_documents, existing_documents) where:
             - new_documents: Need README/model card fetch + embedding
@@ -338,26 +367,31 @@ class UnifiedVectorEmbedder:
                     readme_fetch_count += 1
 
                 # Extract description from model card (first ~200 chars)
-                description = self._extract_description_from_text(model_card) if model_card else ""
+                description = (
+                    self._extract_description_from_text(model_card)
+                    if model_card
+                    else ""
+                )
 
                 # Conditional chunking based on content length
                 if model_card and len(model_card) > self.chunking_threshold:
                     # Long model card: chunk it
                     chunks = self._chunk_text(model_card)
-                    logger.debug(f"   Chunking model card '{model_name}' into {len(chunks)} chunks")
+                    logger.debug(
+                        f"   Chunking model card '{model_name}' into {len(chunks)} chunks"
+                    )
 
                     for i, chunk in enumerate(chunks):
                         doc = {
                             "id": f"{model_id}_chunk_{i}",
                             "parent_id": model_id,
                             "chunk_index": i,
-                            "name": f"{model_name} (part {i+1}/{len(chunks)})",
+                            "name": f"{model_name} (part {i + 1}/{len(chunks)})",
                             "description": description,
                             "readme_content": chunk,
                             "url": model["url"],
                             "doc_type": "hf_model",
-                            "rag_category": model.get("rag_category"),
-                            "topics": model.get("tags", []),
+                            "topics": normalize_tags(model.get("tags", [])),
                             # Metadata
                             "downloads": model.get("downloads"),
                             "likes": model.get("likes"),
@@ -378,8 +412,7 @@ class UnifiedVectorEmbedder:
                         "readme_content": model_card,  # Full model card
                         "url": model["url"],
                         "doc_type": "hf_model",
-                        "rag_category": model.get("rag_category"),
-                        "topics": model.get("tags", []),
+                        "topics": normalize_tags(model.get("tags", [])),
                         # Metadata
                         "downloads": model.get("downloads"),
                         "likes": model.get("likes"),
@@ -394,7 +427,9 @@ class UnifiedVectorEmbedder:
                 if (idx + 1) % 10 == 0:
                     time.sleep(0.5)
 
-        logger.info(f"   ✓ Fetched {readme_fetch_count}/{len([m for m in models if m['id'] not in existing_ids])} model cards for new models")
+        logger.info(
+            f"   ✓ Fetched {readme_fetch_count}/{len([m for m in models if m['id'] not in existing_ids])} model cards for new models"
+        )
 
         # Process repos
         logger.info(f"📝 Processing {len(repos)} repos...")
@@ -423,26 +458,29 @@ class UnifiedVectorEmbedder:
                     readme_fetch_count_repos += 1
 
                 # Extract description from README (first ~200 chars)
-                description = self._extract_description_from_text(readme) if readme else ""
+                description = (
+                    self._extract_description_from_text(readme) if readme else ""
+                )
 
                 # Conditional chunking based on content length
                 if readme and len(readme) > self.chunking_threshold:
                     # Long README: chunk it
                     chunks = self._chunk_text(readme)
-                    logger.debug(f"   Chunking README '{repo_name}' into {len(chunks)} chunks")
+                    logger.debug(
+                        f"   Chunking README '{repo_name}' into {len(chunks)} chunks"
+                    )
 
                     for i, chunk in enumerate(chunks):
                         doc = {
                             "id": f"{repo_id}_chunk_{i}",
                             "parent_id": repo_id,
                             "chunk_index": i,
-                            "name": f"{repo_name} (part {i+1}/{len(chunks)})",
+                            "name": f"{repo_name} (part {i + 1}/{len(chunks)})",
                             "description": description,
                             "readme_content": chunk,
                             "url": repo["url"],
                             "doc_type": "github_repo",
-                            "rag_category": repo.get("rag_category"),
-                            "topics": repo.get("topics", []),
+                            "topics": normalize_tags(repo.get("topics", [])),
                             # Metadata
                             "stars": repo.get("stars"),
                             "forks": repo.get("forks"),
@@ -463,8 +501,7 @@ class UnifiedVectorEmbedder:
                         "readme_content": readme,  # Full README
                         "url": repo["url"],
                         "doc_type": "github_repo",
-                        "rag_category": repo.get("rag_category"),
-                        "topics": repo.get("topics", []),
+                        "topics": normalize_tags(repo.get("topics", [])),
                         # Metadata
                         "stars": repo.get("stars"),
                         "forks": repo.get("forks"),
@@ -479,7 +516,9 @@ class UnifiedVectorEmbedder:
                 if (idx + 1) % 10 == 0:
                     time.sleep(0.5)
 
-        logger.info(f"   ✓ Fetched {readme_fetch_count_repos}/{len([r for r in repos if r['id'] not in existing_ids])} READMEs for new repos")
+        logger.info(
+            f"   ✓ Fetched {readme_fetch_count_repos}/{len([r for r in repos if r['id'] not in existing_ids])} READMEs for new repos"
+        )
 
         # Process blog articles with conditional chunking (always new, never update)
         for article in articles:
@@ -503,8 +542,7 @@ class UnifiedVectorEmbedder:
                     "description": full_content,
                     "url": article["url"],
                     "doc_type": "blog_article",
-                    "rag_category": None,
-                    "topics": article.get("rag_topics", []),
+                    "topics": normalize_tags(article.get("rag_topics", [])),
                     # Content metadata
                     "published_at": article.get("published_at"),
                     "content_source": article.get("source"),
@@ -514,19 +552,20 @@ class UnifiedVectorEmbedder:
             else:
                 # Long article: chunk it
                 chunks = self._chunk_text(full_content)
-                logger.debug(f"   Chunking article '{title[:50]}' into {len(chunks)} chunks")
+                logger.debug(
+                    f"   Chunking article '{title[:50]}' into {len(chunks)} chunks"
+                )
 
                 for i, chunk in enumerate(chunks):
                     doc = {
                         "id": f"{article_id}_chunk_{i}",
                         "parent_id": article_id,
                         "chunk_index": i,
-                        "name": f"{title} (part {i+1}/{len(chunks)})",
+                        "name": f"{title} (part {i + 1}/{len(chunks)})",
                         "description": chunk,
                         "url": article["url"],
                         "doc_type": "blog_article",
-                        "rag_category": None,
-                        "topics": article.get("rag_topics", []),
+                        "topics": normalize_tags(article.get("rag_topics", [])),
                         # Content metadata
                         "published_at": article.get("published_at"),
                         "content_source": article.get("source"),
@@ -545,65 +584,37 @@ class UnifiedVectorEmbedder:
         Create rich, semantic text for embedding based on document type.
         Uses natural language descriptions (no numbers, no labels).
         """
-        doc_type = doc['doc_type']
+        doc_type = doc["doc_type"]
 
-        if doc_type == 'hf_model':
-            parts = [doc['name']]
+        if doc_type == "hf_model":
+            parts = [doc["name"]]
 
             # Add name with slashes replaced for better tokenization
             # "Supabase/gte-small" → "Supabase gte-small" (keep technical identifiers intact)
-            if '/' in doc['name']:
-                parts.append(doc['name'].replace('/', ' '))
-
-            # Add semantic popularity signal
-            if doc.get('downloads'):
-                downloads = doc['downloads']
-                if downloads > 100_000_000:
-                    parts.append("Extremely popular and widely used model")
-                    parts.append("Most downloaded in its category")
-                elif downloads > 10_000_000:
-                    parts.append("Very popular model")
-                    parts.append("Used in many production systems")
-                elif downloads > 1_000_000:
-                    parts.append("Popular model with active usage")
-
-            # Add semantic category description
-            if doc.get('rag_category') == 'embedding':
-                parts.append("Embedding model for semantic search")
-                parts.append("Converts text to dense vector representations")
-            elif doc.get('rag_category') == 'reranking':
-                parts.append("Reranking model for improving search results")
-                parts.append("Used for cross-encoder reranking")
-
-            # Add semantic task description
-            if doc.get('task'):
-                task = doc['task']
-                if 'feature-extraction' in task or 'sentence-similarity' in task:
-                    parts.append("Sentence embedding and similarity matching")
-                elif 'text-generation' in task:
-                    parts.append("Text generation and language modeling")
+            if "/" in doc["name"]:
+                parts.append(doc["name"].replace("/", " "))
 
             # Add description (already semantic)
-            if doc.get('description'):
-                parts.append(doc['description'])
+            if doc.get("description"):
+                parts.append(doc["description"])
 
             # Add full model card README (main searchable content)
-            if doc.get('readme_content'):
-                parts.append(doc['readme_content'])
+            if doc.get("readme_content"):
+                parts.append(doc["readme_content"])
 
             return "\n".join(parts)
 
-        elif doc_type == 'github_repo':
-            parts = [doc['name']]
+        elif doc_type == "github_repo":
+            parts = [doc["name"]]
 
             # Add name with slashes replaced for better tokenization
             # "langflow-ai/langflow" → "langflow-ai langflow" (keep org names intact)
-            if '/' in doc['name']:
-                parts.append(doc['name'].replace('/', ' '))
+            if "/" in doc["name"]:
+                parts.append(doc["name"].replace("/", " "))
 
             # Add semantic popularity signal
-            if doc.get('stars'):
-                stars = doc['stars']
+            if doc.get("stars"):
+                stars = doc["stars"]
                 if stars > 100_000:
                     parts.append("Extremely popular and widely adopted repository")
                     parts.append("Top open source project")
@@ -615,40 +626,27 @@ class UnifiedVectorEmbedder:
                 elif stars > 1_000:
                     parts.append("Established repository with good adoption")
 
-            # Add semantic category description
-            if doc.get('rag_category'):
-                category = doc['rag_category']
-                if category == 'rag_tool' or category == 'rag_framework':
-                    parts.append("RAG framework for building AI applications")
-                    parts.append("Provides tools for retrieval-augmented generation")
-                elif category == 'vector_db':
-                    parts.append("Vector database for similarity search")
-                    parts.append("Stores and queries embeddings")
-                elif category == 'agent_framework':
-                    parts.append("Agent framework for autonomous AI systems")
-                    parts.append("Builds AI agents with tools and memory")
-
             # Add language context (if relevant)
-            if doc.get('language'):
-                lang = doc['language']
-                if lang in ['Python', 'TypeScript', 'JavaScript']:
+            if doc.get("language"):
+                lang = doc["language"]
+                if lang in ["Python", "TypeScript", "JavaScript"]:
                     parts.append(f"{lang} implementation")
 
             # Add description (already semantic)
-            if doc.get('description'):
-                parts.append(doc['description'])
+            if doc.get("description"):
+                parts.append(doc["description"])
 
             # Add full README (main searchable content)
-            if doc.get('readme_content'):
-                parts.append(doc['readme_content'])
+            if doc.get("readme_content"):
+                parts.append(doc["readme_content"])
 
             return "\n".join(parts)
 
         else:
             # For blog articles and other types, use natural format
-            parts = [doc['name']]
-            if doc.get('description'):
-                parts.append(doc['description'])
+            parts = [doc["name"]]
+            if doc.get("description"):
+                parts.append(doc["description"])
             return "\n".join(parts)
 
     def generate_embeddings(self, documents: List[Dict]) -> List[Dict]:
@@ -692,7 +690,9 @@ class UnifiedVectorEmbedder:
             logger.info("⏭️  No documents to upsert")
             return
 
-        logger.info(f"\n⬆️  Upserting {len(documents)} documents to {self.documents_table}...")
+        logger.info(
+            f"\n⬆️  Upserting {len(documents)} documents to {self.documents_table}..."
+        )
 
         rows = []
         for doc in documents:
@@ -705,7 +705,6 @@ class UnifiedVectorEmbedder:
                 "description": doc.get("description", ""),
                 "url": doc["url"],
                 "doc_type": doc["doc_type"],
-                "rag_category": doc.get("rag_category"),
                 "topics": doc.get("topics", []),
                 "text": rich_text,
                 "embedding": doc["embedding"],
@@ -751,16 +750,18 @@ class UnifiedVectorEmbedder:
 
     def update_metadata_only(self, documents: List[Dict]):
         """Update only frequently-changing metadata fields for existing documents.
-        
+
         This avoids re-fetching READMEs and re-generating embeddings for documents
-        that already exist. Only updates: downloads, stars, forks, likes, 
+        that already exist. Only updates: downloads, stars, forks, likes,
         ranking_position, and snapshot_date.
         """
         if not documents:
             logger.info("⏭️  No metadata to update")
             return
 
-        logger.info(f"\n📊 Updating metadata for {len(documents)} existing documents...")
+        logger.info(
+            f"\n📊 Updating metadata for {len(documents)} existing documents..."
+        )
 
         # Batch update using upsert (Supabase will update matching IDs)
         batch_size = 100
@@ -773,10 +774,14 @@ class UnifiedVectorEmbedder:
                 self.client.table(self.documents_table).upsert(batch).execute()
 
                 if (i // batch_size + 1) % 5 == 0:
-                    logger.info(f"  Updated {i + len(batch)}/{len(documents)} documents")
+                    logger.info(
+                        f"  Updated {i + len(batch)}/{len(documents)} documents"
+                    )
 
             except Exception as e:
-                logger.error(f"❌ Failed to update metadata batch {i // batch_size + 1}: {e}")
+                logger.error(
+                    f"❌ Failed to update metadata batch {i // batch_size + 1}: {e}"
+                )
                 # Continue with next batch
 
         logger.info(f"✅ Successfully updated metadata for {len(documents)} documents")
@@ -808,13 +813,15 @@ class UnifiedVectorEmbedder:
             existing_ids = self.get_existing_ids()
 
             # Step 2: Fetch data from source tables
-            logger.info(f"\n📂 STEP 1: Fetching data from source tables (date: {snapshot_date})...")
+            logger.info(
+                f"\n📂 STEP 1: Fetching data from source tables (date: {snapshot_date})..."
+            )
             models = self.fetch_models_from_sql(snapshot_date)
             repos = self.fetch_repos_from_sql(snapshot_date)
 
             # Check if we need to fetch articles (only if none exist in documents table)
             articles_exist = any(
-                doc_id.startswith('blog_') or 'chunk' in doc_id
+                doc_id.startswith("blog_") or "chunk" in doc_id
                 for doc_id in existing_ids
             )
 
@@ -857,9 +864,15 @@ class UnifiedVectorEmbedder:
             logger.info(
                 f"   - Sources: {len(models)} models + {len(repos)} repos + {len(articles)} articles"
             )
-            logger.info(f"   - New documents (with embeddings): {len(documents_with_embeddings)}")
-            logger.info(f"   - Existing documents (metadata only): {len(existing_documents)}")
-            logger.info(f"   - Total in documents table: {len(existing_ids) + len(documents_with_embeddings)}")
+            logger.info(
+                f"   - New documents (with embeddings): {len(documents_with_embeddings)}"
+            )
+            logger.info(
+                f"   - Existing documents (metadata only): {len(existing_documents)}"
+            )
+            logger.info(
+                f"   - Total in documents table: {len(existing_ids) + len(documents_with_embeddings)}"
+            )
             logger.info("=" * 60 + "\n")
 
         except Exception as e:

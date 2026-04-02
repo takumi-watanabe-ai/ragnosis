@@ -1,9 +1,12 @@
 """
-Unified RAG taxonomy for data collection and query planning.
-Shared between:
-- HuggingFace model fetcher
-- GitHub repo fetcher
-- Query planner (edge function)
+Unified RAG Taxonomy - Single source of truth for data collection and search.
+Based on analysis of 771 documents (359 HF models + 412 GitHub repos).
+
+⚠️ IMPORTANT: This file is mirrored in TypeScript at:
+   supabase/functions/_shared/tag-taxonomy.ts
+
+   Any changes to RAG_TAXONOMY or NOISE_PATTERNS must be manually
+   synced to the TypeScript file to keep data collection and search aligned.
 """
 
 from typing import Dict, List, TypedDict
@@ -11,26 +14,34 @@ from typing import Dict, List, TypedDict
 
 class CategoryConfig(TypedDict):
     """Configuration for each RAG category."""
+
     name: str
-    hf_tags: List[str]  # HuggingFace tags to search
-    github_topics: List[str]  # GitHub topics to search
+    hf_tags: List[str]  # HuggingFace tags to search/match
+    github_topics: List[str]  # GitHub topics to search/match
     keywords: List[str]  # General keywords for classification
 
 
-# Unified RAG taxonomy with search terms for both platforms
+# Comprehensive RAG taxonomy based on actual data analysis
 RAG_TAXONOMY: Dict[str, CategoryConfig] = {
-    "embedding": {
+    # ============================================================================
+    # CORE RAG COMPONENTS
+    # ============================================================================
+    "embedding_models": {
         "name": "Embedding Models",
         "hf_tags": [
             "feature-extraction",
             "sentence-similarity",
             "sentence-transformers",
             "embeddings",
+            "text-embeddings-inference",
+            "image-feature-extraction",
         ],
         "github_topics": [
-            "sentence-transformers",
             "embeddings",
+            "sentence-transformers",
             "text-embeddings",
+            "sentence-embeddings",
+            "embedding",
             "instructor-embedding",
         ],
         "keywords": [
@@ -39,15 +50,16 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "sentence-transformers",
             "sentence transformers",
             "semantic similarity",
+            "text embeddings",
         ],
     },
-
-    "reranking": {
+    "reranking_models": {
         "name": "Reranking Models",
         "hf_tags": [
             "text-ranking",
             "reranker",
             "reranking",
+            "cross-encoder",
         ],
         "github_topics": [
             "reranking",
@@ -60,20 +72,51 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "reranking",
             "cross-encoder",
             "text-ranking",
+            "re-ranking",
         ],
     },
-
-    "rag_framework": {
+    "retrieval_models": {
+        "name": "Retrieval Models",
+        "hf_tags": [
+            "retrieval",
+            "ColBERT",
+            "PyLate",
+            "dense-retrieval",
+            "sparse-retrieval",
+        ],
+        "github_topics": [
+            "retrieval",
+            "ColBERT",
+            "PyLate",
+            "dense-retrieval",
+            "sparse-retrieval",
+            "information-retrieval",
+            "hybrid-search",
+            "full-text-search",
+        ],
+        "keywords": [
+            "colbert",
+            "pylate",
+            "dense retrieval",
+            "sparse retrieval",
+            "retrieval model",
+            "bm25",
+        ],
+    },
+    # ============================================================================
+    # RAG FRAMEWORKS & INFRASTRUCTURE
+    # ============================================================================
+    "rag_frameworks": {
         "name": "RAG Frameworks",
         "hf_tags": [
             "rag",
-            "retrieval",
             "langchain",
             "llamaindex",
             "haystack",
         ],
         "github_topics": [
             "rag",
+            "retrieval-augmented-generation",
             "langchain",
             "llamaindex",
             "llama-index",
@@ -83,6 +126,8 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "langflow",
             "flowise",
             "ragas",
+            "langgraph",
+            "agentic-rag",
         ],
         "keywords": [
             "rag",
@@ -90,11 +135,12 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "retrieval-augmented",
             "langchain",
             "llamaindex",
+            "llama index",
             "haystack",
+            "semantic kernel",
         ],
     },
-
-    "vector_db": {
+    "vector_databases": {
         "name": "Vector Databases",
         "hf_tags": [
             "vector-database",
@@ -111,17 +157,27 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "pinecone",
             "faiss",
             "pgvector",
+            "vector-search-engine",
+            "hnsw",
+            "nearest-neighbor-search",
+            "approximate-nearest-neighbor-search",
+            "neural-search",
         ],
         "keywords": [
             "vector database",
             "vector store",
             "vector search",
             "similarity search",
-            "semantic search",
+            "qdrant",
+            "chromadb",
+            "pinecone",
+            "milvus",
+            "faiss",
+            "pgvector",
+            "weaviate",
         ],
     },
-
-    "agent_framework": {
+    "agent_frameworks": {
         "name": "Agent Frameworks",
         "hf_tags": [
             "agent",
@@ -132,7 +188,11 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "agent",
             "agents",
             "agentic",
+            "agentic-ai",
+            "ai-agents",
+            "agentic-workflow",
             "multi-agent",
+            "multi-agent-systems",
             "autogpt",
             "auto-gpt",
             "babyagi",
@@ -144,166 +204,325 @@ RAG_TAXONOMY: Dict[str, CategoryConfig] = {
             "agent",
             "agents",
             "agentic",
+            "agentic ai",
+            "ai agents",
+            "agentic workflow",
             "multi-agent",
             "autonomous agent",
+            "autogpt",
+            "crewai",
         ],
     },
-
+    # ============================================================================
+    # SPECIALIZED TOOLS
+    # ============================================================================
     "document_processing": {
         "name": "Document Processing",
         "hf_tags": [
             "document-processing",
             "document-parsing",
             "ocr",
+            "document-question-answering",
+            "visual-question-answering",
+            "visual-document-retrieval",
+            "image-text-to-text",
+            "table-question-answering",
         ],
         "github_topics": [
             "document-processing",
             "document-parsing",
             "pdf-parser",
+            "pdf-processing",
+            "pdf-to-text",
             "unstructured",
             "pypdf",
             "docling",
             "ocr",
-            "information-retrieval",
-            "pdf-to-text",
+            "pdf",
+            "document-qa",
+            "document-retrieval",
+            "vlm",
+            "multi-modal",
         ],
         "keywords": [
             "document processing",
             "document parsing",
             "pdf parser",
+            "pdf processing",
             "ocr",
-            "information retrieval",
+            "unstructured",
+            "pypdf",
+            "docling",
         ],
     },
-
-    "observability": {
-        "name": "LLM Observability & Evaluation",
+    "knowledge_management": {
+        "name": "Knowledge Graphs & Memory",
+        "hf_tags": [],
+        "github_topics": [
+            "knowledge-graph",
+            "knowledge-base",
+            "memory",
+            "graphrag",
+            "graph-database",
+            "graph-rag",
+            "memory-management",
+            "memory-engine",
+            "knowledgebase",
+        ],
+        "keywords": [
+            "knowledge graph",
+            "knowledge base",
+            "memory",
+            "graphrag",
+            "graph rag",
+            "memory management",
+            "knowledge management",
+        ],
+    },
+    "search_qa": {
+        "name": "Search & Question Answering",
+        "hf_tags": [
+            "question-answering",
+        ],
+        "github_topics": [
+            "semantic-search",
+            "search",
+            "search-engine",
+            "similarity-search",
+            "question-answering",
+            "chatbot",
+        ],
+        "keywords": [
+            "semantic search",
+            "search engine",
+            "similarity search",
+            "question answering",
+            "qa system",
+            "chatbot",
+        ],
+    },
+    "mcp": {
+        "name": "Model Context Protocol",
+        "hf_tags": [],
+        "github_topics": [
+            "mcp",
+            "model-context-protocol",
+        ],
+        "keywords": [
+            "mcp",
+            "model context protocol",
+        ],
+    },
+    # ============================================================================
+    # LLM ECOSYSTEM
+    # ============================================================================
+    "llm_providers": {
+        "name": "LLM Providers & Platforms",
+        "hf_tags": [
+            "openai",
+            "anthropic",
+            "conversational",
+            "text-generation",
+            "summarization",
+            "translation",
+        ],
+        "github_topics": [
+            "llm",
+            "llms",
+            "openai",
+            "chatgpt",
+            "gpt",
+            "gpt-4",
+            "gpt-3",
+            "anthropic",
+            "claude",
+            "gemini",
+            "ollama",
+            "deepseek",
+            "llama",
+            "llama3",
+            "mistral",
+            "llamacpp",
+            "huggingface",
+            "large-language-models",
+            "generative-ai",
+            "genai",
+        ],
+        "keywords": [
+            "llm",
+            "large language model",
+            "openai",
+            "chatgpt",
+            "gpt-4",
+            "claude",
+            "anthropic",
+            "gemini",
+            "ollama",
+            "llama",
+        ],
+    },
+    "observability_evaluation": {
+        "name": "Observability & Evaluation",
         "hf_tags": [
             "evaluation",
             "monitoring",
+            "mteb",
         ],
         "github_topics": [
-            "llm-observability",
+            "llmops",
+            "llm-evaluation",
+            "mlops",
             "observability",
             "monitoring",
+            "tracing",
             "evaluation",
             "evals",
-            "llm-evaluation",
-            "llmops",
-            "tracing",
             "langfuse",
             "phoenix",
             "prompt-engineering",
+            "fine-tuning",
+            "benchmark",
+            "benchmarking",
         ],
         "keywords": [
+            "llmops",
+            "mlops",
             "llm observability",
             "observability",
             "monitoring",
             "evaluation",
             "evals",
-            "llmops",
             "tracing",
+            "langfuse",
+            "prompt engineering",
         ],
     },
+    # ============================================================================
+    # DEVELOPMENT TOOLS - DISABLED FOR DATA COLLECTION (too broad, non-RAG specific)
+    # ============================================================================
+    # These categories capture too many non-RAG repos and create noise in the dataset.
+    # Keep them commented out for data collection, only use for search filtering if needed.
+    #
+    # "programming_languages": {
+    #     "name": "Programming Languages",
+    #     "hf_tags": [],
+    #     "github_topics": [
+    #         "python",
+    #         "typescript",
+    #         "javascript",
+    #         "golang",
+    #         "go",
+    #         "rust",
+    #         "java",
+    #     ],
+    #     "keywords": [
+    #         "python",
+    #         "typescript",
+    #         "javascript",
+    #         "golang",
+    #         "rust",
+    #         "java",
+    #     ],
+    # },
+    # "web_infrastructure": {
+    #     "name": "Web Frameworks & Infrastructure",
+    #     "hf_tags": [],
+    #     "github_topics": [
+    #         "nextjs",
+    #         "react",
+    #         "fastapi",
+    #         "streamlit",
+    #         "docker",
+    #         "kubernetes",
+    #         "postgresql",
+    #         "postgres",
+    #     ],
+    #     "keywords": [
+    #         "nextjs",
+    #         "react",
+    #         "fastapi",
+    #         "streamlit",
+    #         "docker",
+    #         "kubernetes",
+    #         "postgresql",
+    #     ],
+    # },
 }
 
 
-def get_all_hf_tags() -> List[str]:
-    """Get all HuggingFace tags for RAG detection."""
-    tags = []
+# ============================================================================
+# NOISE PATTERNS - Tags to filter out
+# ============================================================================
+
+NOISE_PATTERNS = [
+    # Metadata
+    r"^arxiv:",
+    r"^dataset:",
+    r"^region:",
+    r"^deploy:",
+    r"^license:",
+    r"^base_model:",
+    r"^doi:",
+    # Technical markers
+    r"^eval-results$",
+    r"^endpoints_compatible$",
+    r"^model-index$",
+    r"^custom_code$",
+    r"^generated_from_trainer$",
+    # Model formats (keep in DB, but not for semantic search)
+    r"^safetensors$",
+    r"^onnx$",
+    r"^gguf$",
+    r"^openvino$",
+    r"^pytorch$",
+    r"^transformers\.js$",
+    # Natural language codes (2-letter ISO codes)
+    r"^(en|ja|zh|ru|ar|es|ko|de|fr|pt|it|hi|nl|tr|pl|cs|th|fa|ca|id|sv|sl|gu|gl|uk|da|mn|el|lv|vi|fi|mr|et|ro|ms|sr|ga|ka|hy|lt|sk|bg|my|hu|mk|te|hr|sq|ta|he|ur|pa|bn|kn|cy|eu|sw|ml|km|so|af|kk|ky)$",
+    r"^multilingual$",
+]
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+
+def get_all_relevant_tags() -> List[str]:
+    """Get all relevant tags across all RAG_TAXONOMY categories."""
+    tags = set()
     for category in RAG_TAXONOMY.values():
-        tags.extend(category["hf_tags"])
-    return list(set(tags))
+        tags.update(category["hf_tags"])
+        tags.update(category["github_topics"])
+    return sorted(tags)
 
 
-def get_all_github_topics() -> List[str]:
-    """Get all GitHub topics for RAG detection."""
-    topics = []
-    for category in RAG_TAXONOMY.values():
-        topics.extend(category["github_topics"])
-    return list(set(topics))
-
-
-def get_all_keywords() -> List[str]:
-    """Get all keywords for RAG detection."""
-    keywords = []
-    for category in RAG_TAXONOMY.values():
-        keywords.extend(category["keywords"])
-    return list(set(keywords))
-
-
-def classify_category(text: str, tags: List[str]) -> str | None:
-    """Classify text/tags into RAG category."""
-    text_lower = text.lower()
-    tags_lower = [t.lower() for t in tags]
-
+def get_category_for_tag(tag: str) -> str | None:
+    """Get category ID for a given tag."""
+    tag_lower = tag.lower()
     for category_id, config in RAG_TAXONOMY.items():
-        # Check tags
-        for tag in config["hf_tags"] + config["github_topics"]:
-            if tag.lower() in tags_lower or tag.lower() in text_lower:
-                return category_id
-
-        # Check keywords
-        for keyword in config["keywords"]:
-            if keyword.lower() in text_lower:
-                return category_id
-
+        all_tags = [t.lower() for t in config["hf_tags"] + config["github_topics"]]
+        if tag_lower in all_tags:
+            return category_id
     return None
 
 
-def get_category_metadata() -> List[Dict]:
-    """
-    Get category metadata for query planner.
-    Returns structured data for LLM to choose from.
-    """
-    return [
-        {
-            "category_id": category_id,
-            "name": config["name"],
-            "description": f"Search for {config['name'].lower()}",
-            "example_queries": _get_example_queries(category_id),
-        }
-        for category_id, config in RAG_TAXONOMY.items()
-    ]
+def extract_query_tags(query: str) -> List[str]:
+    """Extract relevant tags from a query using taxonomy."""
+    query_lower = query.lower()
+    matched_tags = set()
 
+    for category in RAG_TAXONOMY.values():
+        # Check keywords first
+        for keyword in category["keywords"]:
+            if keyword.lower() in query_lower:
+                # Add associated tags
+                matched_tags.update(category["hf_tags"])
+                matched_tags.update(category["github_topics"])
+                break
 
-def _get_example_queries(category_id: str) -> List[str]:
-    """Get example queries for each category."""
-    examples = {
-        "embedding": [
-            "best embedding models",
-            "which embedding model should I use",
-            "compare sentence transformers",
-        ],
-        "reranking": [
-            "top reranking models",
-            "how to rerank search results",
-            "cross-encoder vs bi-encoder",
-        ],
-        "rag_framework": [
-            "popular RAG frameworks",
-            "langchain vs llamaindex",
-            "best framework for RAG",
-        ],
-        "vector_db": [
-            "which vector database to use",
-            "qdrant vs pinecone",
-            "self-hosted vector database",
-        ],
-        "agent_framework": [
-            "best agent frameworks",
-            "how to build ai agents",
-            "autogpt alternatives",
-        ],
-        "document_processing": [
-            "pdf parsing libraries",
-            "document extraction tools",
-            "ocr for rag",
-        ],
-        "observability": [
-            "llm monitoring tools",
-            "how to evaluate rag systems",
-            "langfuse vs phoenix",
-        ],
-    }
-    return examples.get(category_id, [])
+        # Check direct tag matches
+        for tag in category["hf_tags"] + category["github_topics"]:
+            if tag.lower() in query_lower:
+                matched_tags.add(tag)
+
+    return sorted(matched_tags)

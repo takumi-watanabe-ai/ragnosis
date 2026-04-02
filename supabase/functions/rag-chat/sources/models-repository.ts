@@ -35,12 +35,12 @@ export class ModelsRepository {
 
     // Fetch more candidates for reranking
     const candidateCount = config.ranking.candidateCount
-    const candidates = await this.query(candidateCount, category, author)
+    const candidates = await this.query(candidateCount, author)
 
     // Fallback if filtered query returned nothing
     if (candidates.length === 0 && (category || author)) {
       console.log(`⚠️  No results with filters, falling back to unfiltered query`)
-      const unfilteredCandidates = await this.query(candidateCount, null, null)
+      const unfilteredCandidates = await this.query(candidateCount, null)
       return await this.reranker.rerank(query, unfilteredCandidates, config.ranking.finalResultCount)
     }
 
@@ -55,7 +55,6 @@ export class ModelsRepository {
   private async query(limit: number, category: string | null, author: string | null): Promise<SearchResult[]> {
     const { data, error } = await this.supabase.rpc('get_top_models', {
       match_limit: limit,
-      filter_category: category,
       filter_author: author
     })
 
@@ -83,8 +82,7 @@ export class ModelsRepository {
       likes: m.likes,
       ranking_position: m.ranking_position,
       author: m.author,
-      task: m.task,
-      rag_category: m.rag_category
+      task: m.task
     }
   }
 }

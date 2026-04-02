@@ -29,7 +29,7 @@ export function QuickQuestions({ onSelectQuestion }: QuickQuestionsProps) {
         return (
           <div
             key={category.id}
-            className="border-b border-cream-dark last:border-0 pb-2"
+            className="border-b border-stone-border last:border-0 pb-2"
           >
             <button
               onClick={() => toggleCategory(category.id)}

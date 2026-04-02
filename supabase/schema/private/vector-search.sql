@@ -3,11 +3,87 @@
 -- Internal implementation - no validation
 -- ============================================================================
 
+-- Drop old signature
+DROP FUNCTION IF EXISTS private.match_documents(vector(384), integer, text);
+
+-- Core vector similarity search function
+CREATE OR REPLACE FUNCTION private.match_documents(
+    query_embedding vector(384),
+    match_count INT,
+    filter_doc_type TEXT DEFAULT NULL,
+    filter_tags TEXT[] DEFAULT NULL
+)
+RETURNS TABLE (
+    id TEXT,
+    name TEXT,
+    description TEXT,
+    url TEXT,
+    doc_type TEXT,
+    topics TEXT[],
+    text TEXT,
+    similarity FLOAT,
+    -- Metrics
+    downloads BIGINT,
+    stars INT,
+    likes INT,
+    forks INT,
+    ranking_position INT,
+    -- Creators
+    author TEXT,
+    owner TEXT,
+    -- Technical
+    language TEXT,
+    task TEXT,
+    -- Content metadata
+    published_at TIMESTAMPTZ,
+    content_source TEXT,
+    -- Tracking
+    snapshot_date DATE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        documents.id,
+        documents.name,
+        documents.description,
+        documents.url,
+        documents.doc_type,
+        documents.topics,
+        documents.text,
+        1 - (documents.embedding <=> query_embedding) AS similarity,
+        documents.downloads,
+        documents.stars,
+        documents.likes,
+        documents.forks,
+        documents.ranking_position,
+        documents.author,
+        documents.owner,
+        documents.language,
+        documents.task,
+        documents.published_at,
+        documents.content_source,
+        documents.snapshot_date
+    FROM documents
+    WHERE
+        (filter_doc_type IS NULL OR documents.doc_type = filter_doc_type)
+        AND (filter_tags IS NULL OR documents.topics && filter_tags)  -- Array overlap operator
+    ORDER BY documents.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+
+COMMENT ON FUNCTION private.match_documents IS 'Core vector similarity search on unified documents table';
+
+-- Drop old signature
+DROP FUNCTION IF EXISTS private.search_documents(vector(384), integer, text);
+
 CREATE OR REPLACE FUNCTION private.search_documents(
     query_embedding vector(384),
     match_limit INTEGER,
-    filter_doc_type TEXT,
-    filter_rag_category TEXT
+    filter_doc_type TEXT DEFAULT NULL,
+    filter_tags TEXT[] DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -23,7 +99,6 @@ BEGIN
             'description', d.description,
             'url', d.url,
             'doc_type', d.doc_type,
-            'rag_category', d.rag_category,
             'topics', d.topics,
             'text', d.text,
             'similarity', d.similarity,
@@ -42,11 +117,11 @@ BEGIN
         ) ORDER BY d.similarity DESC
     )
     INTO v_results
-    FROM match_documents(
+    FROM private.match_documents(
         query_embedding,
         match_limit,
         filter_doc_type,
-        filter_rag_category
+        filter_tags
     ) d;
 
     RETURN COALESCE(v_results, '[]'::JSONB);
@@ -60,11 +135,14 @@ COMMENT ON FUNCTION private.search_documents IS 'Internal vector search on unifi
 -- Internal implementation - no validation
 -- ============================================================================
 
+-- Drop old signature
+DROP FUNCTION IF EXISTS private.text_search_documents(text, integer, text);
+
 CREATE OR REPLACE FUNCTION private.text_search_documents(
     search_query TEXT,
     match_limit INTEGER,
-    filter_doc_type TEXT,
-    filter_rag_category TEXT
+    filter_doc_type TEXT DEFAULT NULL,
+    filter_tags TEXT[] DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -80,7 +158,6 @@ BEGIN
             'description', d.description,
             'url', d.url,
             'doc_type', d.doc_type,
-            'rag_category', d.rag_category,
             'topics', d.topics,
             'text', d.text,
             'rank', d.rank,
@@ -106,7 +183,6 @@ BEGIN
             documents.description,
             documents.url,
             documents.doc_type,
-            documents.rag_category,
             documents.topics,
             documents.text,
             ts_rank_cd(
@@ -135,7 +211,7 @@ BEGIN
                 to_tsvector('english', coalesce(documents.text, ''))
             ) @@ websearch_to_tsquery('english', search_query)
             AND (filter_doc_type IS NULL OR documents.doc_type = filter_doc_type)
-            AND (filter_rag_category IS NULL OR documents.rag_category = filter_rag_category)
+            AND (filter_tags IS NULL OR documents.topics && filter_tags)
         ORDER BY rank DESC
         LIMIT match_limit
     ) d;

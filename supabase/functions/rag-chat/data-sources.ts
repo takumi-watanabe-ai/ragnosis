@@ -11,14 +11,16 @@ import { ModelsRepository } from './sources/models-repository.ts'
 import { ReposRepository } from './sources/repos-repository.ts'
 import { TrendsRepository } from './sources/trends-repository.ts'
 import { expandQuery } from './query-expander.ts'
+import { QueryPlanner } from './query-planner.ts'
 
 const supabase = createClient(
   config.database.url,
   config.database.serviceRoleKey
 )
 
-// Lazy-initialized hybrid search instance
+// Lazy-initialized instances
 let hybridSearch: HybridSearch | null = null
+let queryPlanner: QueryPlanner | null = null
 
 /**
  * Get or create hybrid search instance
@@ -37,6 +39,16 @@ function getHybridSearch(): HybridSearch {
     )
   }
   return hybridSearch
+}
+
+/**
+ * Get or create query planner instance
+ */
+function getQueryPlanner(): QueryPlanner {
+  if (!queryPlanner) {
+    queryPlanner = new QueryPlanner()
+  }
+  return queryPlanner
 }
 
 /**
@@ -74,14 +86,18 @@ export async function executeDataSource(
     case 'vector_search_unified': {
       const originalQuery = query.params?.query || ''
 
+      // Phase 1.3: Use query planner to extract tags and filters
+      const plan = getQueryPlanner().plan(originalQuery)
+      const filters = plan.suggestedFilters
+
       // Query expansion if enabled
       if (config.features.queryExpansion.enabled) {
         const queries = await expandQuery(originalQuery)
         console.log(`🔄 Searching with ${queries.length} query variations`)
 
-        // Search with all query variations in parallel
+        // Search with all query variations in parallel (with filters)
         const allResults = await Promise.all(
-          queries.map(q => getHybridSearch().search(q, limit))
+          queries.map(q => getHybridSearch().search(q, limit, filters))
         )
 
         // Merge and deduplicate by URL, keeping highest score
@@ -99,8 +115,8 @@ export async function executeDataSource(
           .slice(0, limit)
       }
 
-      // Default: single query search
-      return await getHybridSearch().search(originalQuery, limit)
+      // Default: single query search with tag-based filters
+      return await getHybridSearch().search(originalQuery, limit, filters)
     }
 
     default:

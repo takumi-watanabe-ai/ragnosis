@@ -50,12 +50,10 @@ def main():
         min_downloads=100  # Quality threshold
     )
     
-    # All models from tag search are RAG-related
-    rag_models = [m for m in models if m.is_rag_related]
+    # All models from tag search are RAG-related (filtered during fetch)
+    logger.info(f"   Found {len(models)} RAG models via targeted search")
 
-    logger.info(f"   Found {len(rag_models)} RAG models via targeted search")
-
-    if rag_models:
+    if models:
         rows = [
             {
                 "id": m.id,
@@ -66,13 +64,11 @@ def main():
                 "downloads": m.downloads,
                 "likes": m.likes,
                 "ranking_position": m.ranking_position,
-                "is_rag_related": m.is_rag_related,
-                "rag_category": m.rag_category,
                 "tags": m.tags,
                 "url": m.url,
                 "last_updated": m.last_updated,
             }
-            for m in rag_models
+            for m in models
         ]
         supabase.table("hf_models").upsert(rows).execute()
         logger.info(f"   ✅ Inserted {len(rows)} models")
@@ -89,12 +85,10 @@ def main():
         min_stars=100  # Quality threshold
     )
     
-    # All repos from topic search are RAG-related
-    rag_repos = [r for r in repos if r.is_rag_related]
+    # All repos from topic search are RAG-related (filtered during fetch)
+    logger.info(f"   Found {len(repos)} RAG repos via targeted search")
 
-    logger.info(f"   Found {len(rag_repos)} RAG repos via targeted search")
-
-    if rag_repos:
+    if repos:
         rows = [
             {
                 "id": r.id,
@@ -107,13 +101,11 @@ def main():
                 "language": r.language,
                 "topics": r.topics,
                 "ranking_position": r.ranking_position,
-                "is_rag_related": r.is_rag_related,
-                "rag_category": r.rag_category,
                 "url": r.url,
                 "created_at": r.created_at,
                 "updated_at": r.updated_at,
             }
-            for r in rag_repos
+            for r in repos
         ]
         supabase.table("github_repos").upsert(rows).execute()
         logger.info(f"   ✅ Inserted {len(rows)} repos")
@@ -124,8 +116,8 @@ def main():
     logger.info("\n" + "=" * 60)
     logger.info("✅ TAG-DRIVEN DATA COLLECTION COMPLETE")
     logger.info("=" * 60)
-    logger.info(f"   📊 HF Models: {len(rag_models)}")
-    logger.info(f"   📊 GitHub Repos: {len(rag_repos)}")
+    logger.info(f"   📊 HF Models: {len(models)}")
+    logger.info(f"   📊 GitHub Repos: {len(repos)}")
     logger.info("=" * 60)
     logger.info("💡 Benefits of tag-driven approach:")
     logger.info("   • Captures high-quality low-download models")

@@ -94,13 +94,13 @@ function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): 
       if (item.likes) context += `   Likes: ${item.likes.toLocaleString()}\n`;
       if (item.author) context += `   Author: ${item.author}\n`;
       if (item.task) context += `   Task: ${item.task}\n`;
-      if (item.description) context += `   Description: ${item.description.substring(0, 200)}\n`;
+      if (item.description) context += `   Description: ${item.description.substring(0, 200).replace(/\(part\s+\d+\/\d+\)/gi, '')}\n`;
     } else if (docType === "github_repo") {
       if (item.stars) context += `   Stars: ${item.stars.toLocaleString()}\n`;
       if (item.forks) context += `   Forks: ${item.forks.toLocaleString()}\n`;
       if (item.owner) context += `   Owner: ${item.owner}\n`;
       if (item.language) context += `   Language: ${item.language}\n`;
-      if (item.description) context += `   Description: ${item.description.substring(0, 200)}\n`;
+      if (item.description) context += `   Description: ${item.description.substring(0, 200).replace(/\(part\s+\d+\/\d+\)/gi, '')}\n`;
     }
     context += "\n";
   });
@@ -249,7 +249,6 @@ function buildAnswerPrompt(
         context += `   Downloads: ${item.downloads.toLocaleString()}\n`;
       if (item.likes) context += `   Likes: ${item.likes.toLocaleString()}\n`;
       if (item.author) context += `   Author: ${item.author}\n`;
-      if (item.rag_category) context += `   Category: ${item.rag_category}\n`;
     } else if (item.doc_type === "github_repo") {
       if (item.stars) context += `   Stars: ${item.stars.toLocaleString()}\n`;
       if (item.forks) context += `   Forks: ${item.forks.toLocaleString()}\n`;
@@ -269,7 +268,10 @@ function buildAnswerPrompt(
           i < 2
             ? config.search.context.primaryExcerpt
             : config.search.context.secondaryExcerpt;
-        const excerpt = item.content.substring(0, excerptLength).trim();
+        const excerpt = item.content
+          .substring(0, excerptLength)
+          .replace(/\(part\s+\d+\/\d+\)/gi, '')
+          .trim();
         context += `   ${excerpt}...\n`;
       }
     }
@@ -278,6 +280,7 @@ function buildAnswerPrompt(
     if (item.description && item.doc_type !== "blog_article") {
       const desc = item.description
         .substring(0, config.search.context.descriptionMax)
+        .replace(/\(part\s+\d+\/\d+\)/gi, '')
         .trim();
       context += `   ${desc}\n`;
     }
@@ -360,8 +363,7 @@ ANSWER APPROACH:
 
 Requirements:
 - Compare using only features/use cases from sources
-- Use table for 3+ items, bullets for 2 items
-- Provide "Use X if..." guidance based on sources only`;
+- Use table for 3+ items, bullets for 2 items`;
 
     case "conceptual":
     default:

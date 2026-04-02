@@ -13,6 +13,8 @@ from dataclasses import dataclass, asdict
 
 import requests
 
+from rag_taxonomy import RAG_TAXONOMY
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -35,10 +37,6 @@ class GitHubRepo:
     updated_at: str
     url: str
     ranking_position: int  # Position in overall top repos
-    is_rag_related: bool  # Whether this is RAG/LLM/AI related
-    rag_category: Optional[
-        str
-    ]  # "rag_framework", "vector_db", "llm_tool", "agent_framework"
     source: str = "github"
     scraped_at: str = datetime.now().isoformat()
 
@@ -47,135 +45,121 @@ class GitHubFetcher:
     """Fetcher for GitHub repository market share and ranking."""
 
     API_URL = "https://api.github.com"
-
-    # RAG-related categories (SPECIFIC to RAG/retrieval/embedding)
-    RAG_CATEGORIES = {
-        "rag_framework": [
-            "langchain",
-            "llamaindex",
-            "haystack",
-            "semantic-kernel",
-            "gpt-index",
-            "langflow",
-            "flowise",
-            "ragas",
-        ],
-        "vector_db": [
-            "qdrant",
-            "chroma",
-            "chromadb",
-            "weaviate",
-            "milvus",
-            "pinecone",
-            "faiss",
-            "pgvector",
-            "vectordb",
-        ],
-        "embedding_tool": [
-            "sentence-transformers",
-            "instructor-embedding",
-            "text-embeddings",
-            "embedding",
-        ],
-        "agent_framework": [
-            "autogpt",
-            "auto-gpt",
-            "babyagi",
-            "crewai",
-            "agentgpt",
-            "superagi",
-            "agent",
-            "agentic",
-        ],
-        "document_processing": [  # Verified from Unstructured-IO, pypdf, docling
-            "unstructured",
-            "pypdf",
-            "docling",
-            "document-parser",
-            "document-parsing",
-            "pdf-parser",
-            "pdf-parsing",
-            "ocr",
-            "information-retrieval",
-            "preprocessing",
-            "pdf-to-text",
-            "pdf-to-json",
-        ],
-        "observability": [  # Verified from langfuse, ragas, phoenix
-            "langfuse",
-            "phoenix",
-            "llm-observability",
-            "observability",
-            "monitoring",
-            "evaluation",
-            "evals",
-            "llm-evaluation",
-            "llmops",
-            "tracing",
-            "prompt-engineering",
-        ],
-    }
-
-    # Keywords for RAG detection (SPECIFIC - no generic LLM terms)
-    RAG_KEYWORDS = [
-        # Core RAG concepts
-        "rag",
-        "retrieval augmented",
-        "retrieval-augmented",
-        "vector database",
-        "vector store",
-        "vector search",
-        # Embedding/semantic search
-        "embedding",
-        "embeddings",
-        "sentence-transformers",
-        "semantic search",
-        "similarity search",
-        # RAG frameworks (specific names)
-        "langchain",
-        "llamaindex",
-        "haystack",
-        # Agent-specific (not general chatbot)
-        "agent",
-        "agentic",
-        "multi-agent",
-        # Retrieval-specific
-        "retrieval",
-        "document retrieval",
-        "context retrieval",
-        # Document processing (verified from research)
-        "document parser",
-        "document-parser",
-        "pdf parser",
-        "ocr",
-        "information-retrieval",
-        "preprocessing",
-        # Observability/Evaluation (verified from research)
-        "llm observability",
-        "llm-observability",
-        "observability",
-        "evaluation",
-        "evals",
-        "llm evaluation",
-        "llmops",
-        "monitoring",
-    ]
+    GRAPHQL_URL = "https://api.github.com/graphql"
 
     def __init__(self, output_dir: str = "data", api_token: Optional[str] = None):
         """Initialize fetcher."""
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
+        self.api_token = api_token
 
         if api_token:
             self.session.headers.update(
                 {
-                    "Authorization": f"token {api_token}",
+                    "Authorization": f"Bearer {api_token}",
                     "Accept": "application/vnd.github.v3+json",
                 }
             )
         else:
             self.session.headers.update({"Accept": "application/vnd.github.v3+json"})
+
+    def _graphql_search(
+        self, topic: str, min_stars: int, max_results: int = 100
+    ) -> List[Dict]:
+        """
+        Search repos using GraphQL API (5000/hour limit vs REST Search's 30/hour).
+
+        Args:
+            topic: GitHub topic to search for
+            min_stars: Minimum star count
+            max_results: Maximum results to return (max 100 per query)
+
+        Returns:
+            List of repository data dictionaries
+        """
+        query = f"""
+        query {{
+          search(query: "topic:{topic} stars:>={min_stars}", type: REPOSITORY, first: {min(max_results, 100)}) {{
+            nodes {{
+              ... on Repository {{
+                nameWithOwner
+                owner {{ login }}
+                description
+                stargazerCount
+                forkCount
+                watchers {{ totalCount }}
+                issues(states: OPEN) {{ totalCount }}
+                primaryLanguage {{ name }}
+                repositoryTopics(first: 20) {{
+                  nodes {{
+                    topic {{ name }}
+                  }}
+                }}
+                createdAt
+                updatedAt
+                url
+              }}
+            }}
+          }}
+        }}
+        """
+
+        try:
+            response = self.session.post(
+                self.GRAPHQL_URL,
+                json={"query": query},
+                timeout=10
+            )
+
+            if response.status_code == 403:
+                logger.warning("⚠️  Rate limit - skipping remaining topics")
+                return []
+
+            response.raise_for_status()
+            data = response.json()
+
+            if "errors" in data:
+                logger.warning(f"GraphQL errors: {data['errors']}")
+                return []
+
+            # Convert GraphQL response to REST-like format for compatibility
+            repos = []
+            nodes = data.get("data", {}).get("search", {}).get("nodes", [])
+
+            for node in nodes:
+                if not node:
+                    continue
+
+                # Extract topics
+                topics = [
+                    t["topic"]["name"]
+                    for t in node.get("repositoryTopics", {}).get("nodes", [])
+                    if t and t.get("topic")
+                ]
+
+                # Convert to REST API format
+                repo_data = {
+                    "full_name": node.get("nameWithOwner", ""),
+                    "owner": {"login": node.get("owner", {}).get("login", "")},
+                    "description": node.get("description", ""),
+                    "stargazers_count": node.get("stargazerCount", 0),
+                    "forks_count": node.get("forkCount", 0),
+                    "watchers_count": node.get("watchers", {}).get("totalCount", 0),
+                    "open_issues_count": node.get("issues", {}).get("totalCount", 0),
+                    "language": node.get("primaryLanguage", {}).get("name", "") if node.get("primaryLanguage") else "",
+                    "topics": topics,
+                    "created_at": node.get("createdAt", ""),
+                    "updated_at": node.get("updatedAt", ""),
+                    "html_url": node.get("url", ""),
+                }
+                repos.append(repo_data)
+
+            return repos
+
+        except requests.RequestException as e:
+            logger.debug(f"GraphQL query error: {e}")
+            return []
 
     def fetch_by_topics(
         self,
@@ -197,11 +181,6 @@ class GitHubFetcher:
         Returns:
             Deduplicated list of RAG repos from targeted searches
         """
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from rag_taxonomy import RAG_TAXONOMY
-        
         logger.info(f"📥 Fetching repos via targeted topic search...")
         logger.info(f"   Max per topic: {max_per_topic}, Min stars: {min_stars}")
         
@@ -216,36 +195,19 @@ class GitHubFetcher:
                 
                 for topic in config["github_topics"]:
                     logger.info(f"   Topic: {topic}")
-                    
+
                     try:
-                        # Build search query for this topic
-                        query = f"topic:{topic} stars:>={min_stars}"
-                        
-                        params = {
-                            "q": query,
-                            "sort": "stars",
-                            "order": "desc",
-                            "per_page": min(max_per_topic, 100),
-                            "page": 1,
-                        }
-                        
-                        response = self.session.get(
-                            f"{self.API_URL}/search/repositories",
-                            params=params,
-                            timeout=10
+                        # Use GraphQL API (5000/hour limit vs REST's 30/hour)
+                        repo_results = self._graphql_search(
+                            topic=topic,
+                            min_stars=min_stars,
+                            max_results=max_per_topic
                         )
-                        
-                        if response.status_code == 403:
-                            logger.warning("⚠️  Rate limit - skipping remaining topics")
-                            break
-                            
-                        response.raise_for_status()
-                        data = response.json()
-                        
-                        if "items" not in data:
+
+                        if not repo_results:
                             continue
-                            
-                        for repo_data in data["items"][:max_per_topic]:
+
+                        for repo_data in repo_results:
                             repo_name = repo_data.get("full_name", "")
                             
                             # Skip duplicates
@@ -256,12 +218,13 @@ class GitHubFetcher:
                                 repo_data,
                                 ranking_position=ranking_position
                             )
-                            
-                            if repo and repo.is_rag_related:
+
+                            # Filter: only keep RAG-related repos
+                            if repo and self._is_rag_related(repo.repo_name, repo.description, repo.topics):
                                 all_repos.append(repo)
                                 seen_ids.add(repo_name)
                                 ranking_position += 1
-                                
+
                                 logger.info(
                                     f"      ✓ {repo.repo_name} "
                                     f"({repo.stars:,}⭐)"
@@ -307,14 +270,6 @@ class GitHubFetcher:
             updated_at = data.get("updated_at", "")
             url = data.get("html_url", "")
 
-            # Classify if RAG-related
-            is_rag_related = self._is_rag_related(repo_name, description, topics)
-            rag_category = (
-                self._get_rag_category(repo_name, description, topics)
-                if is_rag_related
-                else None
-            )
-
             # Generate ID
             repo_id = f"gh_repo_{repo_name.replace('/', '_')}"
 
@@ -332,9 +287,7 @@ class GitHubFetcher:
                 created_at=created_at,
                 updated_at=updated_at,
                 url=url,
-                ranking_position=ranking_position,
-                is_rag_related=is_rag_related,
-                rag_category=rag_category,
+                ranking_position=ranking_position
             )
 
         except Exception as e:
@@ -344,47 +297,42 @@ class GitHubFetcher:
     def _is_rag_related(
         self, repo_name: str, description: str, topics: List[str]
     ) -> bool:
-        """Determine if repo is RAG/retrieval/embedding related (SPECIFIC, not general LLM)."""
+        """Determine if repo is RAG/retrieval/embedding related (for filtering)."""
         text = f"{repo_name} {description} {' '.join(topics)}".lower()
 
-        # Check against all category keywords
-        for category_repos in self.RAG_CATEGORIES.values():
-            for keyword in category_repos:
+        # First check if matches taxonomy
+        matched = False
+        for category in RAG_TAXONOMY.values():
+            # Check keywords
+            for keyword in category["keywords"]:
                 if keyword.lower() in text:
-                    return True
+                    matched = True
+                    break
 
-        # Check specific RAG keywords
-        for keyword in self.RAG_KEYWORDS:
-            if keyword.lower() in text:
-                return True
+            # Check GitHub topics
+            if not matched:
+                for topic in category["github_topics"]:
+                    if topic.lower() in text:
+                        matched = True
+                        break
 
-        # EXPLICITLY EXCLUDE general LLM tools (not RAG-specific)
+            if matched:
+                break
+
+        if not matched:
+            return False
+
+        # If matched broad keywords, exclude obvious non-RAG false positives
         exclude_keywords = [
-            "llm inference",
-            "model training",
-            "fine-tuning",
-            "finetune",
-            "model server",
-            "llm server",
+            "ui framework", "css framework", "alpine", "tailwind",
+            "web framework", "frontend framework", "react component",
+            "crud", "admin panel", "dashboard template",
+            "stable-diffusion", "image generation", "midjourney",
         ]
 
         for exclude in exclude_keywords:
-            if exclude in text and not any(
-                rag_kw in text for rag_kw in ["rag", "retrieval", "vector", "embedding"]
-            ):
+            if exclude in text:
                 return False
 
-        return False
+        return True
 
-    def _get_rag_category(
-        self, repo_name: str, description: str, topics: List[str]
-    ) -> str:
-        """Classify RAG repo into category."""
-        text = f"{repo_name} {description} {' '.join(topics)}".lower()
-
-        for category, keywords in self.RAG_CATEGORIES.items():
-            for keyword in keywords:
-                if keyword.lower() in text:
-                    return category
-
-        return "other_rag"

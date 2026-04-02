@@ -49,7 +49,11 @@ export interface SearchResult {
   doc_type: 'hf_model' | 'github_repo' | 'google_trend' | 'blog_article'
   similarity?: number
   rerank_score?: number
-  rag_category?: string
+  vector_similarity?: number  // Original semantic similarity from vector search
+  bm25_rank?: number          // Original BM25 rank from text search
+
+  // Categorization & tags
+  topics?: string[]  // Tags/topics from HF/GitHub
 
   // Model-specific
   downloads?: number

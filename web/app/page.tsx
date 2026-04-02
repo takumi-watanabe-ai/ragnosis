@@ -1,6 +1,5 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Search, TrendingUp, Lightbulb, Users } from "lucide-react";
 
 export default function Home() {
   return (
@@ -15,6 +14,12 @@ export default function Home() {
               </span>
             </Link>
             <div className="flex items-center gap-4 sm:gap-6">
+              <Link
+                href="/analytics"
+                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
+              >
+                Analytics
+              </Link>
               <Link
                 href="/chat"
                 className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
@@ -42,7 +47,7 @@ export default function Home() {
           </div>
 
           {/* Title */}
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-light tracking-tight text-charcoal mb-6 sm:mb-8 uppercase">
+          <h1 className="text-4xl font-medium tracking-tight text-charcoal mb-6 sm:mb-8 uppercase text-center">
             RAGnosis
           </h1>
 
@@ -58,30 +63,6 @@ export default function Home() {
           >
             Start Exploring
           </Link>
-        </div>
-
-        {/* Features Grid */}
-        <div className="py-12 sm:py-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 max-w-7xl mx-auto">
-          <FeatureCard
-            icon={<Search className="h-4 w-4 sm:h-5 sm:w-5" />}
-            title="Market Intelligence"
-            description="Real-time data from HuggingFace models, GitHub repos, and Google Trends"
-          />
-          <FeatureCard
-            icon={<TrendingUp className="h-4 w-4 sm:h-5 sm:w-5" />}
-            title="Expert Knowledge"
-            description="Insights from 4,000+ blog articles by teams who built RAG in production"
-          />
-          <FeatureCard
-            icon={<Lightbulb className="h-4 w-4 sm:h-5 sm:w-5" />}
-            title="Smart Answers"
-            description="LLM-powered query understanding with hybrid search and reranking"
-          />
-          <FeatureCard
-            icon={<Users className="h-4 w-4 sm:h-5 sm:w-5" />}
-            title="For Decision Makers"
-            description="Built for engineers, CTOs, architects, and hiring managers"
-          />
         </div>
 
         {/* Quick Examples */}
@@ -108,32 +89,10 @@ export default function Home() {
               Built to showcase production RAG systems, LLM-powered query
               understanding, and hybrid search architectures.
             </p>
-            <p className="text-xs">© 2026 RAGnosis</p>
+            <p className="text-xs">© 2026 RAGNOSIS</p>
           </div>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="p-4 sm:p-5 border border-stone-border bg-white">
-      <div className="mb-3 text-charcoal">{icon}</div>
-      <h3 className="text-xs sm:text-sm font-normal mb-2 text-charcoal uppercase tracking-wide">
-        {title}
-      </h3>
-      <p className="text-xs sm:text-sm text-stone leading-relaxed font-light">
-        {description}
-      </p>
     </div>
   );
 }

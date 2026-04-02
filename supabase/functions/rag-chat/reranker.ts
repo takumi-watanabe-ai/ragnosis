@@ -1,21 +1,17 @@
 /**
- * Cross-Encoder Reranker - Rerank results for better precision/recall
- * Uses semantic similarity scoring between query and documents
+ * Semantic Reranker - Rerank results using existing embeddings
+ * Uses preserved vector similarity scores (already semantic!)
+ * No new embedding generation - reuses DB embeddings
+ * Tag filtering is done at SQL level for efficiency
  */
 
 import type { SearchResult } from './types.ts'
-import { config } from './config.ts'
-
-// Supabase.ai is globally available in edge runtime
-declare const Supabase: any
 
 export class CrossEncoderReranker {
-  private aiSession: any = null
-
   /**
-   * Rerank results using semantic similarity or lightweight text matching
-   * For models/repos: uses fast text matching to avoid CPU timeout
-   * For blogs: uses full embedding similarity
+   * Rerank results using semantic similarity + BM25
+   * Leverages existing vector similarity scores from DB
+   * No embedding generation needed!
    */
   async rerank(
     query: string,
@@ -24,46 +20,18 @@ export class CrossEncoderReranker {
   ): Promise<SearchResult[]> {
     if (results.length === 0) return results
 
-    console.log(`🔀 Reranking ${results.length} results...`)
+    console.log(`🔀 Reranking ${results.length} results with semantic scoring...`)
 
-    // For models/repos with many results, use lightweight text matching
-    const isStructuredData = results[0]?.doc_type === 'hf_model' || results[0]?.doc_type === 'github_repo'
-    if (isStructuredData && results.length > 30) {
-      return this.lightweightRerank(query, results, topK)
-    }
-
-    // For blog articles or small result sets, use full semantic reranking
-    return this.semanticRerank(query, results, topK)
-  }
-
-  /**
-   * Fast text-based reranking for models/repos (no embeddings needed)
-   */
-  private lightweightRerank(
-    query: string,
-    results: SearchResult[],
-    topK: number
-  ): SearchResult[] {
-    const queryLower = query.toLowerCase()
-    const queryTerms = queryLower.split(/\s+/)
-
+    // Score each result using semantic similarity as primary signal
     const scored = results.map(result => {
-      const content = this.getRelevantContent(result).toLowerCase()
+      // Start with semantic similarity from vector search (0-1 range typically)
+      // This is the MAIN signal - already computed with DB embeddings!
+      let score = (result.vector_similarity || 0) * 10 // Scale to 0-10 range
 
-      // Calculate score based on term matches
-      let score = 0
-
-      // Exact name match (highest weight)
-      if (content.includes(queryLower)) score += 10
-
-      // Term matches
-      queryTerms.forEach(term => {
-        if (content.includes(term)) score += 2
-      })
-
-      // Boost for popular items (downloads/stars)
-      const popularity = result.downloads || result.stars || 0
-      score += Math.log10(popularity + 1) * 0.1
+      // Add BM25 signal for keyword matching (scaled down)
+      if (result.bm25_rank) {
+        score += result.bm25_rank * 0.5  // BM25 as secondary signal
+      }
 
       return {
         ...result,
@@ -72,67 +40,16 @@ export class CrossEncoderReranker {
       }
     })
 
+    // Sort by combined score and return top K
     const reranked = scored
       .sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0))
       .slice(0, topK)
 
-    console.log(`✅ Lightweight reranking complete, returning top ${reranked.length}`)
-    return reranked
-  }
-
-  /**
-   * Full semantic reranking using embeddings
-   */
-  private async semanticRerank(
-    query: string,
-    results: SearchResult[],
-    topK: number
-  ): Promise<SearchResult[]> {
-    try {
-      // Generate query embedding
-      if (!this.aiSession) {
-        // @ts-ignore
-        this.aiSession = new Supabase.ai.Session(config.embedding.model)
-      }
-
-      const queryEmbedding = await this.aiSession.run(query, {
-        mean_pool: true,
-        normalize: true
-      })
-
-      // Generate embeddings for all result contents in parallel
-      const contentTexts = results.map(r => this.getRelevantContent(r))
-      const contentEmbeddings = await Promise.all(
-        contentTexts.map(text =>
-          this.aiSession.run(text, { mean_pool: true, normalize: true })
-        )
-      )
-
-      const scoredResults = results.map((result, index) => {
-        const contentEmbedding = contentEmbeddings[index]
-        const similarity = this.cosineSimilarity(queryEmbedding, contentEmbedding)
-        const combinedScore = (similarity * 0.7) + ((result.rerank_score || 0) * 0.3)
-
-        return {
-          ...result,
-          rerank_score: combinedScore,
-          similarity: combinedScore
-        }
-      })
-
-      // Sort by combined score and return top K
-      const reranked = scoredResults
-        .sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0))
-        .slice(0, topK)
-
-      console.log(`✅ Semantic reranking complete, returning top ${reranked.length}`)
-
-      return reranked
-    } catch (error) {
-      console.error('❌ Reranking failed:', error)
-      // Return original results if reranking fails
-      return results.slice(0, topK)
+    console.log(`✅ Semantic reranking complete, returning top ${reranked.length}`)
+    if (reranked.length > 0) {
+      console.log(`   Top result: "${reranked[0].name.substring(0, 60)}..." (score: ${reranked[0].rerank_score?.toFixed(2)})`)
     }
+    return reranked
   }
 
   /**
@@ -148,7 +65,6 @@ export class CrossEncoderReranker {
     // For models/repos, include task and topics for better matching
     if (result.doc_type === 'hf_model' || result.doc_type === 'github_repo') {
       if (result.task) parts.push(`Task: ${result.task}`)
-      if (result.rag_category) parts.push(`Category: ${result.rag_category}`)
       if (result.author) parts.push(`Author: ${result.author}`)
       if (result.owner) parts.push(`Owner: ${result.owner}`)
     }
@@ -161,18 +77,4 @@ export class CrossEncoderReranker {
     return parts.join(' ').substring(0, 1000)
   }
 
-  /**
-   * Calculate cosine similarity between two vectors
-   */
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) return 0
-
-    let dotProduct = 0
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i]
-    }
-
-    // Since embeddings are normalized, dot product = cosine similarity
-    return dotProduct
-  }
 }

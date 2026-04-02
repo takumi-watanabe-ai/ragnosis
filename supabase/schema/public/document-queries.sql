@@ -9,14 +9,13 @@
 
 CREATE OR REPLACE FUNCTION get_top_models(
     match_limit INTEGER DEFAULT 10,
-    filter_category TEXT DEFAULT NULL,
     filter_author TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE sql
 SECURITY DEFINER
 AS $$
-    SELECT private.get_top_models(match_limit, filter_category, filter_author);
+    SELECT private.get_top_models(match_limit, filter_author);
 $$;
 
 COMMENT ON FUNCTION get_top_models IS
@@ -24,14 +23,13 @@ COMMENT ON FUNCTION get_top_models IS
 
 CREATE OR REPLACE FUNCTION get_top_repos(
     match_limit INTEGER DEFAULT 10,
-    filter_category TEXT DEFAULT NULL,
     filter_owner TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE sql
 SECURITY DEFINER
 AS $$
-    SELECT private.get_top_repos(match_limit, filter_category, filter_owner);
+    SELECT private.get_top_repos(match_limit, filter_owner);
 $$;
 
 COMMENT ON FUNCTION get_top_repos IS

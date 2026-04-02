@@ -17,6 +17,14 @@ interface SearchConfig {
   structuredDataBoost: number
 }
 
+export interface SearchFilters {
+  tags?: string[]
+  doc_type?: 'hf_model' | 'github_repo' | 'blog_article'
+  category?: string
+  author?: string
+  owner?: string
+}
+
 export class HybridSearch {
   private aiSession: any = null
   private reranker: CrossEncoderReranker
@@ -34,14 +42,18 @@ export class HybridSearch {
    */
   async search(
     query: string,
-    limit: number
+    limit: number,
+    filters?: SearchFilters
   ): Promise<SearchResult[]> {
     console.log(`🔍 Hybrid search (k-NN + BM25): "${query}"`)
+    if (filters?.tags?.length) {
+      console.log(`🏷️  Filtering by tags:`, filters.tags)
+    }
 
     // Run both searches in parallel
     const [vectorResults, textResults] = await Promise.all([
-      this.performVectorSearch(query),
-      this.performTextSearch(query)
+      this.performVectorSearch(query, filters),
+      this.performTextSearch(query, filters)
     ])
 
     console.log(`📊 Vector search: ${vectorResults.length} results`)
@@ -62,7 +74,7 @@ export class HybridSearch {
   /**
    * Vector search using k-NN
    */
-  private async performVectorSearch(query: string): Promise<SearchResult[]> {
+  private async performVectorSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
     // Generate embedding
     let embedding: number[]
     try {
@@ -78,32 +90,47 @@ export class HybridSearch {
       return []
     }
 
-    // Vector search
-    const { data, error } = await this.supabase.rpc('match_documents', {
+    // Vector search with tag filtering
+    const rpcParams = {
       query_embedding: embedding,
       match_count: this.config.candidateCount,
-      filter_doc_type: null,
-      filter_rag_category: null
-    })
+      filter_doc_type: filters?.doc_type || null,
+      // Don't use tag filtering for blog articles - they have conceptual tags, semantic search is better
+      filter_tags: filters?.doc_type === 'blog_article' ? null : (filters?.tags || null)
+    }
+    console.log('🔍 Vector search RPC params (tags only):', { filter_tags: rpcParams.filter_tags })
+
+    const { data, error } = await this.supabase.rpc('match_documents', rpcParams)
 
     if (error) {
       console.error('❌ Vector search failed:', error)
       return []
     }
 
-    return (data || []).map((d: any) => this.mapToSearchResult(d, d.similarity || 0))
+    const results = (data || []).map((d: any) => {
+      const result = this.mapToSearchResult(d, d.similarity || 0)
+      result.vector_similarity = d.similarity || 0  // Preserve original vector similarity
+      return result
+    })
+
+    // Tag filtering now done in SQL for better performance
+    return results
   }
 
   /**
    * Full-text search using BM25
    */
-  private async performTextSearch(query: string): Promise<SearchResult[]> {
-    const { data, error } = await this.supabase.rpc('text_search_documents', {
+  private async performTextSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
+    const rpcParams = {
       search_query: query,
       match_limit: this.config.candidateCount,
-      filter_doc_type: null,
-      filter_rag_category: null
-    })
+      filter_doc_type: filters?.doc_type || null,
+      // Don't use tag filtering for blog articles - they have conceptual tags, semantic search is better
+      filter_tags: filters?.doc_type === 'blog_article' ? null : (filters?.tags || null)
+    }
+    console.log('🔍 Text search RPC params:', JSON.stringify(rpcParams, null, 2))
+
+    const { data, error } = await this.supabase.rpc('text_search_documents', rpcParams)
 
     if (error) {
       console.error('❌ Text search failed:', error)
@@ -115,7 +142,14 @@ export class HybridSearch {
       return []
     }
 
-    return (data.data?.results || []).map((d: any) => this.mapToSearchResult(d, d.rank || 0))
+    const results = (data.data?.results || []).map((d: any) => {
+      const result = this.mapToSearchResult(d, d.rank || 0)
+      result.bm25_rank = d.rank || 0  // Preserve original BM25 rank
+      return result
+    })
+
+    // Tag filtering now done in SQL for better performance
+    return results
   }
 
   /**
@@ -194,7 +228,7 @@ export class HybridSearch {
       doc_type: d.doc_type,
       similarity: score,
       rerank_score: score,
-      rag_category: d.rag_category,
+      topics: d.topics || [],  // Include topics for tag matching
       content: d.text,
       downloads: d.downloads,
       stars: d.stars,
