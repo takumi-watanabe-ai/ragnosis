@@ -93,7 +93,7 @@ export class QueryPlanner {
   /**
    * Infer document type from query patterns
    */
-  private inferDocType(query: string): 'hf_model' | 'github_repo' | 'blog_article' | undefined {
+  private inferDocType(query: string): 'hf_model' | 'github_repo' | 'knowledge_base' | undefined {
     const queryLower = query.toLowerCase()
 
     // Model indicators
@@ -117,13 +117,14 @@ export class QueryPlanner {
       return 'github_repo'
     }
 
-    // Blog/article indicators
+    // Knowledge base/documentation indicators
     if (
       queryLower.match(/^(what|how|why|explain|understand|guide|tutorial)/) ||
       queryLower.includes('article') ||
-      queryLower.includes('blog')
+      queryLower.includes('documentation') ||
+      queryLower.includes('docs')
     ) {
-      return 'blog_article'
+      return 'knowledge_base'
     }
 
     return undefined

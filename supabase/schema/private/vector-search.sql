@@ -3,8 +3,9 @@
 -- Internal implementation - no validation
 -- ============================================================================
 
--- Drop old signature
+-- Drop old signatures
 DROP FUNCTION IF EXISTS private.match_documents(vector(384), integer, text);
+DROP FUNCTION IF EXISTS private.match_documents(vector(384), integer, text, text[]);
 
 -- Core vector similarity search function
 CREATE OR REPLACE FUNCTION private.match_documents(
@@ -20,7 +21,6 @@ RETURNS TABLE (
     url TEXT,
     doc_type TEXT,
     topics TEXT[],
-    text TEXT,
     similarity FLOAT,
     -- Metrics
     downloads BIGINT,
@@ -51,7 +51,6 @@ BEGIN
         documents.url,
         documents.doc_type,
         documents.topics,
-        documents.text,
         1 - (documents.embedding <=> query_embedding) AS similarity,
         documents.downloads,
         documents.stars,
@@ -100,7 +99,6 @@ BEGIN
             'url', d.url,
             'doc_type', d.doc_type,
             'topics', d.topics,
-            'text', d.text,
             'similarity', d.similarity,
             'downloads', d.downloads,
             'stars', d.stars,
@@ -149,7 +147,12 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_results JSONB;
+    v_tsquery tsquery;
 BEGIN
+    -- Convert AND query to OR query for more flexible matching
+    -- websearch_to_tsquery creates 'word1 & word2' but we want 'word1 | word2'
+    v_tsquery := REPLACE(websearch_to_tsquery('english', search_query)::text, ' & ', ' | ')::tsquery;
+
     -- Call text_search_documents function and format results
     SELECT jsonb_agg(
         jsonb_build_object(
@@ -159,7 +162,6 @@ BEGIN
             'url', d.url,
             'doc_type', d.doc_type,
             'topics', d.topics,
-            'text', d.text,
             'rank', d.rank,
             'downloads', d.downloads,
             'stars', d.stars,
@@ -184,12 +186,10 @@ BEGIN
             documents.url,
             documents.doc_type,
             documents.topics,
-            documents.text,
             ts_rank_cd(
                 setweight(to_tsvector('english', coalesce(documents.name, '')), 'A') ||
-                setweight(to_tsvector('english', coalesce(documents.description, '')), 'B') ||
-                setweight(to_tsvector('english', coalesce(documents.text, '')), 'C'),
-                websearch_to_tsquery('english', search_query)
+                setweight(to_tsvector('english', coalesce(documents.description, '')), 'B'),
+                v_tsquery
             ) AS rank,
             documents.downloads,
             documents.stars,
@@ -207,9 +207,8 @@ BEGIN
         WHERE
             (
                 to_tsvector('english', coalesce(documents.name, '')) ||
-                to_tsvector('english', coalesce(documents.description, '')) ||
-                to_tsvector('english', coalesce(documents.text, ''))
-            ) @@ websearch_to_tsquery('english', search_query)
+                to_tsvector('english', coalesce(documents.description, ''))
+            ) @@ v_tsquery
             AND (filter_doc_type IS NULL OR documents.doc_type = filter_doc_type)
             AND (filter_tags IS NULL OR documents.topics && filter_tags)
         ORDER BY rank DESC

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- RAGnosis Unified Schema - Fresh Start
--- Single documents table for models, repos, and blog articles
+-- Single documents table for models, repos, and knowledge base articles
 -- ============================================================================
 
 -- Extensions
@@ -20,7 +20,7 @@ GRANT USAGE ON SCHEMA shared TO service_role;
 
 -- ============================================================================
 -- UNIFIED DOCUMENTS TABLE
--- Combines ragnosis_docs + blog_docs into single searchable collection
+-- Combines ragnosis_docs + knowledge_base into single searchable collection
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -29,17 +29,16 @@ CREATE TABLE IF NOT EXISTS documents (
     name TEXT NOT NULL,
     description TEXT,
     url TEXT,
-    doc_type TEXT NOT NULL,  -- 'hf_model' | 'github_repo' | 'blog_article'
+    doc_type TEXT NOT NULL,  -- 'hf_model' | 'github_repo' | 'knowledge_base'
 
     -- Universal categorization
     topics TEXT[],            -- GitHub topics / rag topics / tags (universal)
 
     -- Vector search
-    text TEXT NOT NULL,       -- Preview text for display
     embedding vector(384),    -- Semantic embedding
 
     -- Metadata tracking
-    snapshot_date DATE,       -- When this data snapshot was taken (NULL for blogs)
+    snapshot_date DATE,       -- When this data snapshot was taken (NULL for knowledge_base)
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -65,20 +64,20 @@ CREATE TABLE IF NOT EXISTS documents (
     task TEXT,                -- HF models: task type (e.g., "text-classification", "feature-extraction")
 
     -- ========================================================================
-    -- CONTENT METADATA (blogs only, nullable)
+    -- CONTENT METADATA (documentation only, nullable)
     -- ========================================================================
-    published_at TIMESTAMPTZ, -- Blog articles: publish date
-    content_source TEXT,      -- Blog articles: source site (e.g., "langchain", "llamaindex")
-    scrape_method TEXT,       -- Blog articles: how it was scraped ("sitemap", "rss")
+    published_at TIMESTAMPTZ, -- Knowledge base: publish date
+    content_source TEXT,      -- Knowledge base: source site (e.g., "langchain", "llamaindex")
+    scrape_method TEXT,       -- Knowledge base: how it was scraped ("sitemap", "rss")
 
     -- ========================================================================
-    -- CHUNKING (blogs only, but could be universal)
+    -- CHUNKING (documentation only, but could be universal)
     -- ========================================================================
     parent_id TEXT,           -- For chunks: parent document ID (NULL for whole documents)
     chunk_index INT DEFAULT 0, -- For chunks: index (0 for whole documents)
 
     -- Constraints
-    CONSTRAINT valid_doc_type CHECK (doc_type IN ('hf_model', 'github_repo', 'blog_article')),
+    CONSTRAINT valid_doc_type CHECK (doc_type IN ('hf_model', 'github_repo', 'knowledge_base')),
     CONSTRAINT valid_scrape_method CHECK (scrape_method IS NULL OR scrape_method IN ('sitemap', 'rss'))
 );
 
@@ -100,7 +99,7 @@ CREATE INDEX IF NOT EXISTS documents_downloads_idx ON documents(downloads DESC) 
 CREATE INDEX IF NOT EXISTS documents_stars_idx ON documents(stars DESC) WHERE stars IS NOT NULL;
 CREATE INDEX IF NOT EXISTS documents_ranking_position_idx ON documents(ranking_position) WHERE ranking_position IS NOT NULL;
 
--- Content metadata (for blogs)
+-- Content metadata (for knowledge base)
 CREATE INDEX IF NOT EXISTS documents_published_at_idx ON documents(published_at DESC) WHERE published_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS documents_content_source_idx ON documents(content_source) WHERE content_source IS NOT NULL;
 
@@ -125,6 +124,7 @@ CREATE TABLE IF NOT EXISTS hf_models (
     likes INT DEFAULT 0,
     ranking_position INT,
     tags TEXT[],
+    rag_categories TEXT[],
     url TEXT,
     last_updated TIMESTAMPTZ,
     scraped_at TIMESTAMPTZ DEFAULT NOW(),
@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS github_repos (
     watchers INT DEFAULT 0,
     language TEXT,
     topics TEXT[],
+    rag_categories TEXT[],
     ranking_position INT,
     url TEXT,
     created_at TIMESTAMPTZ,
@@ -157,29 +158,25 @@ CREATE INDEX IF NOT EXISTS github_repos_snapshot_date_idx ON github_repos(snapsh
 CREATE INDEX IF NOT EXISTS github_repos_ranking_position_idx ON github_repos(ranking_position);
 CREATE INDEX IF NOT EXISTS github_repos_stars_idx ON github_repos(stars DESC);
 
--- Blog articles (source content before chunking)
-CREATE TABLE IF NOT EXISTS blog_articles (
+-- Knowledge base (documentation pages - source content before chunking)
+CREATE TABLE IF NOT EXISTS knowledge_base (
     id TEXT PRIMARY KEY,
     url TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
-    author TEXT,
-    published_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
     content TEXT NOT NULL,
     excerpt TEXT,
     source TEXT NOT NULL,
-    tags TEXT[],
-    rag_topics TEXT[],
+    section TEXT,
     scrape_method TEXT NOT NULL,
     scraped_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT valid_scrape_method CHECK (scrape_method IN ('sitemap', 'rss'))
 );
 
-CREATE INDEX IF NOT EXISTS blog_articles_source_idx ON blog_articles(source);
-CREATE INDEX IF NOT EXISTS blog_articles_published_at_idx ON blog_articles(published_at DESC);
-CREATE INDEX IF NOT EXISTS blog_articles_scraped_at_idx ON blog_articles(scraped_at DESC);
-CREATE INDEX IF NOT EXISTS blog_articles_tags_idx ON blog_articles USING GIN(tags);
-CREATE INDEX IF NOT EXISTS blog_articles_rag_topics_idx ON blog_articles USING GIN(rag_topics);
+CREATE INDEX IF NOT EXISTS knowledge_base_source_idx ON knowledge_base(source);
+CREATE INDEX IF NOT EXISTS knowledge_base_updated_at_idx ON knowledge_base(updated_at DESC);
+CREATE INDEX IF NOT EXISTS knowledge_base_scraped_at_idx ON knowledge_base(scraped_at DESC);
+CREATE INDEX IF NOT EXISTS knowledge_base_section_idx ON knowledge_base(section);
 
 -- Google Trends (time-series analytics)
 CREATE TABLE IF NOT EXISTS google_trends (
@@ -204,7 +201,7 @@ CREATE INDEX IF NOT EXISTS google_trends_keyword_idx ON google_trends(keyword);
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hf_models ENABLE ROW LEVEL SECURITY;
 ALTER TABLE github_repos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE blog_articles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE knowledge_base ENABLE ROW LEVEL SECURITY;
 ALTER TABLE google_trends ENABLE ROW LEVEL SECURITY;
 
 -- Service role bypasses RLS (used by Python scripts and edge functions)
@@ -222,15 +219,15 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO postgres
 -- COMMENTS
 -- ============================================================================
 
-COMMENT ON TABLE documents IS 'Unified vector search table for HF models, GitHub repos, and blog articles';
-COMMENT ON COLUMN documents.doc_type IS 'Document type: hf_model, github_repo, or blog_article';
-COMMENT ON COLUMN documents.topics IS 'Universal topics field: GitHub topics for repos, rag_topics for blogs';
-COMMENT ON COLUMN documents.downloads IS 'HuggingFace model downloads (NULL for repos/blogs)';
-COMMENT ON COLUMN documents.stars IS 'GitHub repo stars (NULL for models/blogs)';
-COMMENT ON COLUMN documents.author IS 'HuggingFace model author (NULL for repos/blogs)';
-COMMENT ON COLUMN documents.owner IS 'GitHub repo owner (NULL for models/blogs)';
-COMMENT ON COLUMN documents.task IS 'HuggingFace model task type (NULL for repos/blogs)';
-COMMENT ON COLUMN documents.language IS 'GitHub repo primary language (NULL for models/blogs)';
-COMMENT ON COLUMN documents.content_source IS 'Blog source site: langchain, llamaindex, etc. (NULL for models/repos)';
+COMMENT ON TABLE documents IS 'Unified vector search table for HF models, GitHub repos, and knowledge base articles';
+COMMENT ON COLUMN documents.doc_type IS 'Document type: hf_model, github_repo, or knowledge_base';
+COMMENT ON COLUMN documents.topics IS 'Universal topics field: GitHub topics for repos, sections for knowledge base';
+COMMENT ON COLUMN documents.downloads IS 'HuggingFace model downloads (NULL for repos/knowledge_base)';
+COMMENT ON COLUMN documents.stars IS 'GitHub repo stars (NULL for models/knowledge_base)';
+COMMENT ON COLUMN documents.author IS 'HuggingFace model author (NULL for repos/knowledge_base)';
+COMMENT ON COLUMN documents.owner IS 'GitHub repo owner (NULL for models/knowledge_base)';
+COMMENT ON COLUMN documents.task IS 'HuggingFace model task type (NULL for repos/knowledge_base)';
+COMMENT ON COLUMN documents.language IS 'GitHub repo primary language (NULL for models/knowledge_base)';
+COMMENT ON COLUMN documents.content_source IS 'Knowledge base source site: langchain, llamaindex, etc. (NULL for models/repos)';
 COMMENT ON COLUMN documents.parent_id IS 'Parent document ID for chunks (NULL for whole documents)';
 COMMENT ON COLUMN documents.chunk_index IS 'Chunk index (0 for whole documents, 1+ for chunks)';

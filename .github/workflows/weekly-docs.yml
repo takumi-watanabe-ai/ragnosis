@@ -1,4 +1,4 @@
-name: Weekly Blog Scraping
+name: Weekly Documentation Scraping
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  scrape-blogs:
+  scrape-docs:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,22 +26,22 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Scrape blog articles
-        id: blogs
+      - name: Scrape documentation pages
+        id: docs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          echo "📰 Running blog scraping pipeline..."
+          echo "📚 Running documentation scraping pipeline..."
           cd src/data_collection/content
-          python blog_pipeline.py
+          python doc_pipeline.py
 
       - name: Summary
         if: always()
         run: |
-          if [ "${{ steps.blogs.outcome }}" != "success" ]; then
-            echo "::warning::⚠️  Blog scraping failed"
-            echo "This is non-critical - blogs will be scraped next week"
+          if [ "${{ steps.docs.outcome }}" != "success" ]; then
+            echo "::warning::⚠️  Documentation scraping failed"
+            echo "This is non-critical - docs will be scraped next week"
           else
-            echo "✅ Blog articles scraped successfully!"
+            echo "✅ Documentation pages scraped successfully!"
           fi

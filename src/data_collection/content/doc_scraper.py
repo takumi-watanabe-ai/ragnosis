@@ -1,4 +1,4 @@
-"""Blog article scraper - fetches RAG-related articles from sitemaps."""
+"""Documentation scraper - fetches content from official documentation sites."""
 
 import hashlib
 import logging
@@ -6,7 +6,7 @@ import re
 import requests
 import xml.etree.ElementTree as ET
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -16,22 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Article:
-    """Represents a blog article."""
+class DocPage:
+    """Represents a documentation page."""
 
     url: str
     title: str
     content: str
-    source: str  # e.g., "langchain", "llamaindex"
+    source: str  # e.g., "langchain-docs", "llamaindex-docs"
     scrape_method: str  # "sitemap"
 
     # Optional fields
-    author: Optional[str] = None
-    published_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     excerpt: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
-    rag_topics: List[str] = field(default_factory=list)
+    section: Optional[str] = None  # e.g., "guides", "api-reference"
 
     @property
     def id(self) -> str:
@@ -44,35 +41,25 @@ class Article:
             "id": self.id,
             "url": self.url,
             "title": self.title,
-            "author": self.author,
-            "published_at": self.published_at.isoformat() if self.published_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "content": self.content,
             "excerpt": self.excerpt,
             "source": self.source,
-            "tags": self.tags,
-            "rag_topics": self.rag_topics,
+            "section": self.section,
             "scrape_method": self.scrape_method,
         }
 
 
-class BlogScraper:
-    """Scrapes blog articles from XML sitemaps."""
+class DocScraper:
+    """Scrapes documentation pages from XML sitemaps."""
 
     def __init__(self, existing_urls=None):
         """Initialize scraper."""
         # Load configs from content directory
         content_dir = Path(__file__).parent
 
-        with open(content_dir / "sites.yaml") as f:
-            self.sites_config = yaml.safe_load(f)
-
-        with open(content_dir / "filters.yaml") as f:
-            filters = yaml.safe_load(f)
-
-        self.rag_keywords = filters["rag_keywords"]
-        self.skip_keywords = filters["skip_keywords"]
-        self.rag_topics_map = filters["rag_topics"]
+        with open(content_dir / "docs.yaml") as f:
+            self.docs_config = yaml.safe_load(f)
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -80,8 +67,8 @@ class BlogScraper:
         })
         self.existing_urls = existing_urls or set()
 
-    def scrape_site(self, site_config: dict, max_articles: int = None) -> List[Article]:
-        """Scrape articles from sitemap."""
+    def scrape_site(self, site_config: dict, max_pages: int = None) -> List[DocPage]:
+        """Scrape documentation pages from sitemap."""
         source = site_config["source_id"]
         sitemap_url = site_config.get("sitemap_url")
 
@@ -89,36 +76,36 @@ class BlogScraper:
             logger.warning(f"⚠️  No sitemap_url for {source}")
             return []
 
-        logger.info(f"🗺️  Fetching: {site_config['name']}")
+        logger.info(f"📚 Fetching: {site_config['name']}")
 
         try:
-            article_entries = self._fetch_urls_from_sitemap(sitemap_url, site_config)
+            page_entries = self._fetch_urls_from_sitemap(sitemap_url, site_config)
 
-            if not article_entries:
+            if not page_entries:
                 logger.warning(f"   ⚠️  No URLs found")
                 return []
 
-            logger.info(f"   Found {len(article_entries)} URLs")
+            logger.info(f"   Found {len(page_entries)} URLs")
 
-            if max_articles:
-                article_entries = article_entries[:max_articles]
+            if max_pages:
+                page_entries = page_entries[:max_pages]
 
-            articles = []
-            for i, (url, sitemap_date) in enumerate(article_entries, 1):
+            pages = []
+            for i, (url, sitemap_date) in enumerate(page_entries, 1):
                 try:
                     if url in self.existing_urls:
                         continue
 
-                    article = self._fetch_article(url, source, sitemap_date)
-                    if article:
-                        articles.append(article)
-                        logger.info(f"   [{i}/{len(article_entries)}] ✅ {article.title[:60]}")
+                    page = self._fetch_page(url, source, sitemap_date, site_config)
+                    if page:
+                        pages.append(page)
+                        logger.info(f"   [{i}/{len(page_entries)}] ✅ {page.title[:60]}")
                 except Exception as e:
-                    logger.warning(f"   [{i}/{len(article_entries)}] ⚠️  Failed: {url}")
+                    logger.warning(f"   [{i}/{len(page_entries)}] ⚠️  Failed: {url}")
                     continue
 
-            logger.info(f"   ✅ Scraped {len(articles)} articles")
-            return articles
+            logger.info(f"   ✅ Scraped {len(pages)} pages")
+            return pages
 
         except Exception as e:
             logger.error(f"   ❌ Sitemap error: {e}")
@@ -136,10 +123,18 @@ class BlogScraper:
             # Check for sitemap index
             sitemap_nodes = root.findall('.//ns:sitemap/ns:loc', namespace)
             if sitemap_nodes:
-                sub_sitemap_url = site_config.get("sitemap_posts_url")
-                if sub_sitemap_url:
-                    return self._fetch_urls_from_sitemap(sub_sitemap_url, site_config)
-                return []
+                # If there's a specific docs sitemap URL, use it
+                docs_sitemap_url = site_config.get("sitemap_docs_url")
+                if docs_sitemap_url:
+                    return self._fetch_urls_from_sitemap(docs_sitemap_url, site_config)
+
+                # Otherwise, fetch from all sub-sitemaps
+                all_entries = []
+                for sitemap_node in sitemap_nodes[:5]:  # Limit to first 5 sitemaps
+                    sub_url = sitemap_node.text
+                    if sub_url:
+                        all_entries.extend(self._fetch_urls_from_sitemap(sub_url, site_config))
+                return all_entries
 
             # Extract URLs
             url_entries = root.findall('.//ns:url', namespace)
@@ -155,12 +150,12 @@ class BlogScraper:
                     if lastmod is not None and lastmod.text:
                         try:
                             date = datetime.fromisoformat(lastmod.text.replace('Z', '+00:00'))
-                        except:
+                        except ValueError:
                             pass
                     all_entries.append((url, date))
 
             # Filter by pattern
-            url_pattern = site_config.get("url_pattern", "")
+            url_pattern = site_config.get("url_pattern")
             if url_pattern:
                 exclude = site_config.get("exclude_patterns", [])
                 filtered = [
@@ -175,8 +170,9 @@ class BlogScraper:
             logger.error(f"   ❌ Sitemap fetch failed: {e}")
             return []
 
-    def _fetch_article(self, url: str, source: str, sitemap_date: datetime = None) -> Article:
-        """Fetch and parse article."""
+    def _fetch_page(self, url: str, source: str, sitemap_date: datetime = None,
+                    site_config: dict = None) -> Optional[DocPage]:
+        """Fetch and parse documentation page."""
         try:
             response = self.session.get(url, timeout=15)
             response.raise_for_status()
@@ -188,60 +184,29 @@ class BlogScraper:
             if not title:
                 return None
 
-            # Early filter
-            if any(skip in title.lower() for skip in self.skip_keywords):
-                return None
-
             # Extract content
-            content = self._extract_content(soup)
+            content = self._extract_content(soup, site_config)
             if not content or len(content.strip()) < 100:
                 return None
 
-            # Check RAG relevance
-            if not self._is_rag_related(title, content):
-                return None
-
             # Extract metadata
-            author = self._extract_author(soup)
-            published_at = self._extract_date(soup) or sitemap_date
+            updated_at = self._extract_date(soup) or sitemap_date
             excerpt = content[:300] if len(content) > 300 else content
-            rag_topics = self._extract_rag_topics(title, content)
+            section = self._extract_section(url, site_config)
 
-            return Article(
+            return DocPage(
                 url=url,
                 title=self._clean_text(title),
                 content=self._clean_text(content),
                 source=source,
                 scrape_method="sitemap",
-                author=author,
-                published_at=published_at,
+                updated_at=updated_at,
                 excerpt=self._clean_text(excerpt),
-                tags=[],
-                rag_topics=rag_topics,
+                section=section,
             )
 
         except Exception:
             return None
-
-    def _is_rag_related(self, title: str, content: str) -> bool:
-        """Check if article is RAG-related."""
-        text = f"{title} {content}".lower()
-
-        if any(skip in text for skip in self.skip_keywords):
-            return False
-
-        return any(keyword in text for keyword in self.rag_keywords)
-
-    def _extract_rag_topics(self, title: str, content: str) -> List[str]:
-        """Extract RAG topics."""
-        text = f"{title} {content}".lower()
-        topics = []
-
-        for topic, keywords in self.rag_topics_map.items():
-            if any(keyword in text for keyword in keywords):
-                topics.append(topic)
-
-        return topics
 
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text."""
@@ -270,42 +235,50 @@ class BlogScraper:
 
         return ""
 
-    def _extract_content(self, soup: BeautifulSoup) -> str:
-        """Extract article content."""
+    def _extract_content(self, soup: BeautifulSoup, site_config: dict = None) -> str:
+        """Extract documentation content."""
+        # Remove unwanted elements
         for unwanted in soup(["script", "style", "nav", "footer", "header", "aside"]):
             unwanted.decompose()
 
-        article = (
-            soup.find("article")
-            or soup.find("main")
-            or soup.find(class_=lambda x: x and "content" in str(x).lower())
-        )
+        # Try to find main content area (documentation-specific selectors)
+        content_selectors = [
+            "article",
+            "main",
+            "[role='main']",
+            ".markdown",
+            ".documentation",
+            ".doc-content",
+            ".content",
+        ]
 
-        if article:
-            content = article.get_text(separator="\n", strip=True)
+        content_elem = None
+        for selector in content_selectors:
+            if selector.startswith("."):
+                content_elem = soup.find(class_=lambda x: x and selector[1:] in str(x).lower())
+            elif selector.startswith("["):
+                # Simple attribute selector
+                content_elem = soup.find(attrs={"role": "main"})
+            else:
+                content_elem = soup.find(selector)
+
+            if content_elem:
+                break
+
+        if content_elem:
+            content = content_elem.get_text(separator="\n", strip=True)
         else:
             content = soup.get_text(separator="\n", strip=True)
 
         lines = (line.strip() for line in content.splitlines())
         return "\n".join(line for line in lines if line)
 
-    def _extract_author(self, soup: BeautifulSoup) -> str:
-        """Extract author."""
-        author_meta = soup.find("meta", {"name": "author"}) or soup.find("meta", property="article:author")
-        if author_meta and author_meta.get("content"):
-            return author_meta["content"]
-
-        author_elem = soup.find(class_=lambda x: x and "author" in str(x).lower())
-        if author_elem:
-            return author_elem.get_text(strip=True)
-
-        return None
-
-    def _extract_date(self, soup: BeautifulSoup) -> datetime:
-        """Extract published date."""
+    def _extract_date(self, soup: BeautifulSoup) -> Optional[datetime]:
+        """Extract updated date."""
         date_meta = (
-            soup.find("meta", property="article:published_time")
-            or soup.find("meta", {"name": "publish-date"})
+            soup.find("meta", property="article:modified_time")
+            or soup.find("meta", property="article:published_time")
+            or soup.find("meta", {"name": "last-modified"})
             or soup.find("time")
         )
 
@@ -314,7 +287,28 @@ class BlogScraper:
             if date_str:
                 try:
                     return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                except:
+                except ValueError:
                     pass
+
+        return None
+
+    def _extract_section(self, url: str, site_config: dict = None) -> Optional[str]:
+        """Extract documentation section from URL."""
+        if not site_config:
+            return None
+
+        # Try to extract section from URL path
+        # e.g., "/docs/guides/..." -> "guides"
+        section_patterns = site_config.get("section_patterns", {})
+        for section, pattern in section_patterns.items():
+            if pattern in url:
+                return section
+
+        # Fallback: extract first path segment after docs
+        parts = url.split("/")
+        if "docs" in parts:
+            idx = parts.index("docs")
+            if idx + 1 < len(parts):
+                return parts[idx + 1]
 
         return None

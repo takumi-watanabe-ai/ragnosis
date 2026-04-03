@@ -28,8 +28,8 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'match_limit must be between 1 and 100');
     END IF;
 
-    IF filter_doc_type IS NOT NULL AND filter_doc_type NOT IN ('hf_model', 'github_repo', 'blog_article') THEN
-        RETURN jsonb_build_object('success', false, 'error', 'filter_doc_type must be hf_model, github_repo, or blog_article');
+    IF filter_doc_type IS NOT NULL AND filter_doc_type NOT IN ('hf_model', 'github_repo', 'knowledge_base') THEN
+        RETURN jsonb_build_object('success', false, 'error', 'filter_doc_type must be hf_model, github_repo, or knowledge_base');
     END IF;
 
     -- Call private function with tag filtering
@@ -86,8 +86,8 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'match_limit must be between 1 and 100');
     END IF;
 
-    IF filter_doc_type IS NOT NULL AND filter_doc_type NOT IN ('hf_model', 'github_repo', 'blog_article') THEN
-        RETURN jsonb_build_object('success', false, 'error', 'filter_doc_type must be hf_model, github_repo, or blog_article');
+    IF filter_doc_type IS NOT NULL AND filter_doc_type NOT IN ('hf_model', 'github_repo', 'knowledge_base') THEN
+        RETURN jsonb_build_object('success', false, 'error', 'filter_doc_type must be hf_model, github_repo, or knowledge_base');
     END IF;
 
     -- Call private function with tag filtering
@@ -117,8 +117,9 @@ COMMENT ON FUNCTION public.text_search_documents IS 'Full-text BM25 search acros
 -- Public wrapper around private.match_documents
 -- ============================================================================
 
--- Drop old signature
+-- Drop old signatures
 DROP FUNCTION IF EXISTS public.match_documents(vector(384), integer, text);
+DROP FUNCTION IF EXISTS public.match_documents(vector(384), integer, text, text[]);
 
 CREATE OR REPLACE FUNCTION public.match_documents(
     query_embedding vector(384),
@@ -133,7 +134,6 @@ RETURNS TABLE (
     url TEXT,
     doc_type TEXT,
     topics TEXT[],
-    text TEXT,
     similarity FLOAT,
     downloads BIGINT,
     stars INT,

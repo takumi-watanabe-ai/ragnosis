@@ -23,7 +23,7 @@ Questions are organized by category with IDs for targeted testing:
 
 | Content Type | Count | % | Categories |
 |--------------|-------|---|-----------|
-| Blog-heavy | 17 | 61% | concepts, implementation, troubleshooting, some comparisons |
+| Documentation-heavy | 17 | 61% | concepts, implementation, troubleshooting, some comparisons |
 | Model questions | 6 | 21% | models |
 | Repo questions | 3 | 11% | repos |
 | Mixed | 2 | 7% | some comparisons, concepts |

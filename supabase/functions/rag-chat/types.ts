@@ -27,7 +27,7 @@ export interface DataSourceQuery {
     categories?: string[]
     limit?: number
     weights?: {
-      blog: number
+      docs: number
       structured: number
     }
   }
@@ -46,7 +46,7 @@ export interface SearchResult {
   name: string
   description: string
   url: string
-  doc_type: 'hf_model' | 'github_repo' | 'google_trend' | 'blog_article'
+  doc_type: 'hf_model' | 'github_repo' | 'google_trend' | 'knowledge_base'
   similarity?: number
   rerank_score?: number
   vector_similarity?: number  // Original semantic similarity from vector search
@@ -75,10 +75,10 @@ export interface SearchResult {
   avg_interest?: number
   peak_interest?: number
 
-  // Blog-specific
+  // Knowledge base-specific
   content?: string
   published_at?: string
-  content_source?: string  // NEW: blog source
+  content_source?: string  // Knowledge base source
 
   // Metadata tracking
   snapshot_date?: string

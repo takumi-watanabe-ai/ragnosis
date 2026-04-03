@@ -62,7 +62,7 @@ export const config = {
   features: {
     // Query planner - intelligent routing to appropriate data sources
     queryPlanner: {
-      enabled: true,           // ON - required for ranking queries with reranking
+      enabled: false,           // ON - required for ranking queries with reranking
     },
 
     // Query expansion - generate semantic variations to improve recall

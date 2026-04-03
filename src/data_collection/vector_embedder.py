@@ -1,7 +1,7 @@
 """
 Unified vector embedding pipeline for RAGnosis.
 
-Embeds HF models, GitHub repos, and blog articles into a single documents table.
+Embeds HF models, GitHub repos, and knowledge base articles into a single documents table.
 """
 
 import json
@@ -190,54 +190,101 @@ class UnifiedVectorEmbedder:
             logger.warning(f"  ✗ Failed to fetch README for {repo_name}: {e}")
             return None
 
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """
+        Split text into sentences using regex.
+
+        Handles common sentence endings while avoiding false positives
+        like "Dr.", "Mr.", "U.S.", etc.
+        """
+        # Pattern for sentence boundaries
+        # Matches: .!? followed by space and capital letter, or end of string
+        # Avoids: Common abbreviations
+        sentence_endings = re.compile(
+            r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<![A-Z]\.)(?<=\.|\?|\!)\s+(?=[A-Z])|(?<=\.|\?|\!)$'
+        )
+
+        sentences = sentence_endings.split(text)
+        # Clean up and filter empty sentences
+        return [s.strip() for s in sentences if s.strip()]
+
     def _chunk_text(
         self, text: str, chunk_size: int = None, overlap: int = None
     ) -> List[str]:
         """
-        Chunk text into overlapping segments.
+        Chunk text into overlapping segments by sentence boundaries.
+
+        Preserves semantic coherence by never breaking mid-sentence.
+        Chunks are built by grouping complete sentences until target size is reached.
 
         Args:
             text: Text to chunk
             chunk_size: Target chunk size in characters (defaults to config)
-            overlap: Overlap between chunks (defaults to config)
+            overlap: Overlap in characters (defaults to config)
 
         Returns:
-            List of text chunks
+            List of text chunks (complete sentences only)
         """
         # Use config defaults if not specified
         if chunk_size is None:
             chunk_size = self.chunk_size
         if overlap is None:
             overlap = self.chunk_overlap
+
         if len(text) <= chunk_size:
             return [text]
 
+        # Split into sentences first
+        sentences = self._split_into_sentences(text)
+
+        if not sentences:
+            return [text]
+
         chunks = []
-        start = 0
+        current_chunk = []
+        current_size = 0
 
-        while start < len(text):
-            end = start + chunk_size
+        i = 0
+        while i < len(sentences):
+            sentence = sentences[i]
+            sentence_size = len(sentence)
 
-            # Try to break at paragraph boundary
-            if end < len(text):
-                # Look for paragraph break within last 20% of chunk
-                search_start = end - int(chunk_size * 0.2)
-                para_break = text.rfind("\n\n", search_start, end)
+            # If single sentence is larger than chunk_size, include it anyway
+            # (better to have one large chunk than break mid-sentence)
+            if sentence_size > chunk_size and not current_chunk:
+                chunks.append(sentence)
+                i += 1
+                continue
 
-                if para_break != -1:
-                    end = para_break + 2  # Include newlines
-                else:
-                    # Fall back to sentence boundary
-                    sent_break = text.rfind(". ", search_start, end)
-                    if sent_break != -1:
-                        end = sent_break + 2
+            # Check if adding this sentence would exceed chunk_size
+            if current_size + sentence_size > chunk_size and current_chunk:
+                # Finalize current chunk
+                chunks.append(' '.join(current_chunk))
 
-            chunk = text[start:end].strip()
-            if chunk:
-                chunks.append(chunk)
+                # Start new chunk with overlap
+                # Calculate how many sentences to keep for overlap
+                overlap_sentences = []
+                overlap_size = 0
 
-            # Move to next chunk with overlap
-            start = end - overlap if end < len(text) else end
+                # Work backwards from current_chunk to build overlap
+                for prev_sentence in reversed(current_chunk):
+                    if overlap_size + len(prev_sentence) <= overlap:
+                        overlap_sentences.insert(0, prev_sentence)
+                        overlap_size += len(prev_sentence)
+                    else:
+                        break
+
+                current_chunk = overlap_sentences
+                current_size = overlap_size
+
+            # Add current sentence to chunk
+            current_chunk.append(sentence)
+            current_size += sentence_size
+            i += 1
+
+        # Add final chunk if any sentences remain
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
 
         return chunks
 
@@ -306,11 +353,11 @@ class UnifiedVectorEmbedder:
             return []
 
     def fetch_articles_from_sql(self) -> List[Dict]:
-        """Fetch blog articles from source table."""
-        logger.info(f"📂 Fetching articles from blog_articles...")
+        """Fetch knowledge base articles from source table."""
+        logger.info(f"📂 Fetching articles from knowledge_base...")
 
         try:
-            response = self.client.table("blog_articles").select("*").execute()
+            response = self.client.table("knowledge_base").select("*").execute()
             articles = response.data
             logger.info(f"   Found {len(articles)} articles")
             return articles
@@ -520,7 +567,7 @@ class UnifiedVectorEmbedder:
             f"   ✓ Fetched {readme_fetch_count_repos}/{len([r for r in repos if r['id'] not in existing_ids])} READMEs for new repos"
         )
 
-        # Process blog articles with conditional chunking (always new, never update)
+        # Process knowledge base articles with conditional chunking (always new, never update)
         for article in articles:
             article_id = article["id"]
 
@@ -541,10 +588,10 @@ class UnifiedVectorEmbedder:
                     "name": title,
                     "description": full_content,
                     "url": article["url"],
-                    "doc_type": "blog_article",
-                    "topics": normalize_tags(article.get("rag_topics", [])),
+                    "doc_type": "knowledge_base",
+                    "topics": [article.get("section")] if article.get("section") else [],
                     # Content metadata
-                    "published_at": article.get("published_at"),
+                    "published_at": article.get("updated_at"),
                     "content_source": article.get("source"),
                     "scrape_method": article.get("scrape_method"),
                 }
@@ -564,10 +611,10 @@ class UnifiedVectorEmbedder:
                         "name": f"{title} (part {i + 1}/{len(chunks)})",
                         "description": chunk,
                         "url": article["url"],
-                        "doc_type": "blog_article",
-                        "topics": normalize_tags(article.get("rag_topics", [])),
+                        "doc_type": "knowledge_base",
+                        "topics": [article.get("section")] if article.get("section") else [],
                         # Content metadata
-                        "published_at": article.get("published_at"),
+                        "published_at": article.get("updated_at"),
                         "content_source": article.get("source"),
                         "scrape_method": article.get("scrape_method"),
                     }
@@ -643,7 +690,7 @@ class UnifiedVectorEmbedder:
             return "\n".join(parts)
 
         else:
-            # For blog articles and other types, use natural format
+            # For knowledge base articles and other types, use natural format
             parts = [doc["name"]]
             if doc.get("description"):
                 parts.append(doc["description"])
@@ -696,9 +743,6 @@ class UnifiedVectorEmbedder:
 
         rows = []
         for doc in documents:
-            # Create rich text with metadata for search
-            rich_text = self._create_embedding_text(doc)
-
             row = {
                 "id": doc["id"],
                 "name": doc["name"],
@@ -706,7 +750,6 @@ class UnifiedVectorEmbedder:
                 "url": doc["url"],
                 "doc_type": doc["doc_type"],
                 "topics": doc.get("topics", []),
-                "text": rich_text,
                 "embedding": doc["embedding"],
                 "snapshot_date": doc.get("snapshot_date"),
                 # Metrics
@@ -795,7 +838,7 @@ class UnifiedVectorEmbedder:
         2. Check existing IDs in documents table
         3. NEW entries: Fetch README/model card + generate embeddings + full upsert
         4. EXISTING entries: Only update metadata (downloads, stars, etc.) - no embedding
-        5. Blog articles: Only process if new (never update)
+        5. Knowledge base articles: Only process if new (never update)
 
         Args:
             snapshot_date: Date to fetch data for (default: today)
@@ -821,15 +864,15 @@ class UnifiedVectorEmbedder:
 
             # Check if we need to fetch articles (only if none exist in documents table)
             articles_exist = any(
-                doc_id.startswith("blog_") or "chunk" in doc_id
+                doc_id.startswith("kb_") or "chunk" in doc_id
                 for doc_id in existing_ids
             )
 
             if articles_exist:
-                logger.info("⏭️  Skipping blog articles (already embedded)")
+                logger.info("⏭️  Skipping knowledge base articles (already embedded)")
                 articles = []
             else:
-                logger.info("📰 Fetching blog articles (first time embedding)")
+                logger.info("📚 Fetching knowledge base articles (first time embedding)")
                 articles = self.fetch_articles_from_sql()
 
             # Step 3: Prepare documents (separate new vs existing)

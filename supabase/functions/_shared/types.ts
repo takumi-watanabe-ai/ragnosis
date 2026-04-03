@@ -5,7 +5,7 @@ export interface DocumentResult {
   name: string
   description: string
   url: string
-  doc_type: 'hf_model' | 'github_repo' | 'blog_article'
+  doc_type: 'hf_model' | 'github_repo' | 'knowledge_base'
   topics?: string[]
   similarity: number
 
@@ -27,7 +27,7 @@ export interface DocumentResult {
 export interface QueryRequest {
   query: string
   top_k?: number
-  filter_doc_type?: 'hf_model' | 'github_repo' | 'blog_article'
+  filter_doc_type?: 'hf_model' | 'github_repo' | 'knowledge_base'
 }
 
 export interface QueryResponse {

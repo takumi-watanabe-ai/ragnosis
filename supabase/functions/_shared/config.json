@@ -8,8 +8,8 @@
   },
   "chunking": {
     "threshold": 2000,
-    "chunk_size": 1800,
-    "overlap": 300,
+    "chunk_size": 2000,
+    "overlap": 400,
     "max_tokens_context": 512
   }
 }

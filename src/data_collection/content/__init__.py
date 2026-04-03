@@ -1,1 +1,1 @@
-"""Content scraping module for blog articles."""
+"""Content scraping module for documentation pages."""

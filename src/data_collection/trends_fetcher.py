@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TrendData:
     """Google Trends data model."""
+
     id: str
     keyword: str
     category: str  # "rag_term", "framework", "tool"
@@ -44,45 +45,38 @@ class GoogleTrendsFetcher:
             "retrieval augmented generation",
             "vector database",
             "semantic search",
-            "embedding"
+            "embedding",
         ],
-
         # RAG frameworks (specific tools)
         "frameworks": [
             "LangChain",
             "LlamaIndex",
-            "Haystack"  # Simple name
+            "Haystack",  # Simple name
         ],
-
         # Vector databases (specific tools - simple names)
         "vector_dbs": [
             "Qdrant",
             "Pinecone",
             "Weaviate",
             "Milvus",
-            "Chroma"  # Yes, includes color but we want the signal
+            "Chroma",  # Yes, includes color but we want the signal
         ],
-
         # Agent terms (track agent trend)
-        "agent_terms": [
-            "AI agent",
-            "agentic AI",
-            "autonomous agent"
-        ]
+        "agent_terms": ["AI agent", "agentic AI", "autonomous agent"],
     }
 
     def __init__(self, output_dir: str = "data"):
         """Initialize fetcher."""
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.pytrends = TrendReq(hl='en-US', tz=360)
+        self.pytrends = TrendReq(hl="en-US", tz=360)
 
     def fetch_trends(
         self,
         keywords: Optional[List[str]] = None,
-        timeframe: str = 'today 12-m',  # Last 12 months
-        geo: str = '',  # '' = worldwide
-        max_keywords_per_request: int = 5
+        timeframe: str = "today 12-m",  # Last 12 months
+        geo: str = "",  # '' = worldwide
+        max_keywords_per_request: int = 5,
     ) -> List[TrendData]:
         """
         Fetch Google Trends data for keywords.
@@ -109,16 +103,12 @@ class GoogleTrendsFetcher:
 
         # Process in batches (Google Trends limit: 5 keywords per request)
         for i in range(0, len(keywords), max_keywords_per_request):
-            batch = keywords[i:i + max_keywords_per_request]
+            batch = keywords[i : i + max_keywords_per_request]
             logger.info(f"\n🔍 Processing batch: {', '.join(batch)}")
 
             try:
                 # Build payload
-                self.pytrends.build_payload(
-                    batch,
-                    timeframe=timeframe,
-                    geo=geo
-                )
+                self.pytrends.build_payload(batch, timeframe=timeframe, geo=geo)
 
                 # Get interest over time
                 interest_df = self.pytrends.interest_over_time()
@@ -137,15 +127,14 @@ class GoogleTrendsFetcher:
                         keyword=keyword,
                         interest_df=interest_df,
                         timeframe=timeframe,
-                        geo=geo
+                        geo=geo,
                     )
 
                     if trend_data:
                         all_trends.append(trend_data)
                         logger.info(
                             f"✓ {keyword}: Avg={trend_data.avg_interest:.1f}, "
-                            f"Current={trend_data.current_interest}, "
-                            f"Trend={trend_data.trend_direction}"
+                            f"Current={trend_data.current_interest}"
                         )
 
                 # Get related queries for first keyword in batch
@@ -174,11 +163,7 @@ class GoogleTrendsFetcher:
         return all_trends
 
     def _parse_trend_data(
-        self,
-        keyword: str,
-        interest_df,
-        timeframe: str,
-        geo: str
+        self, keyword: str, interest_df, timeframe: str, geo: str
     ) -> Optional[TrendData]:
         """Parse trend data from DataFrame."""
         try:
@@ -189,27 +174,12 @@ class GoogleTrendsFetcher:
             peak_interest = int(series.max())
             current_interest = int(series.iloc[-1])
 
-            # Determine trend direction (last 30 days vs previous 30 days)
-            if len(series) >= 60:
-                recent_avg = series.iloc[-30:].mean()
-                previous_avg = series.iloc[-60:-30].mean()
-
-                if recent_avg > previous_avg * 1.1:
-                    trend_direction = "rising"
-                elif recent_avg < previous_avg * 0.9:
-                    trend_direction = "falling"
-                else:
-                    trend_direction = "stable"
-            else:
-                trend_direction = "stable"
-
             # Convert time series to list
             time_series = []
             for date, value in series.items():
-                time_series.append({
-                    "date": date.strftime("%Y-%m-%d"),
-                    "value": int(value)
-                })
+                time_series.append(
+                    {"date": date.strftime("%Y-%m-%d"), "value": int(value)}
+                )
 
             # Determine category
             category = self._get_category(keyword)
@@ -225,7 +195,7 @@ class GoogleTrendsFetcher:
                 avg_interest=avg_interest,
                 peak_interest=peak_interest,
                 time_series=time_series,
-                related_queries=[]
+                related_queries=[],
             )
 
         except Exception as e:
@@ -244,33 +214,35 @@ class GoogleTrendsFetcher:
         queries = []
 
         # Top queries
-        if 'top' in related_data and related_data['top'] is not None:
-            top_df = related_data['top']
+        if "top" in related_data and related_data["top"] is not None:
+            top_df = related_data["top"]
             for _, row in top_df.head(5).iterrows():
-                queries.append({
-                    "query": row['query'],
-                    "value": int(row['value']),
-                    "type": "top"
-                })
+                queries.append(
+                    {"query": row["query"], "value": int(row["value"]), "type": "top"}
+                )
 
         # Rising queries
-        if 'rising' in related_data and related_data['rising'] is not None:
-            rising_df = related_data['rising']
+        if "rising" in related_data and related_data["rising"] is not None:
+            rising_df = related_data["rising"]
             for _, row in rising_df.head(5).iterrows():
-                queries.append({
-                    "query": row['query'],
-                    "value": str(row['value']),  # Can be "Breakout"
-                    "type": "rising"
-                })
+                queries.append(
+                    {
+                        "query": row["query"],
+                        "value": str(row["value"]),  # Can be "Breakout"
+                        "type": "rising",
+                    }
+                )
 
         return queries
 
-    def save_trends(self, trends: List[TrendData], filename: str = "google_trends.json"):
+    def save_trends(
+        self, trends: List[TrendData], filename: str = "google_trends.json"
+    ):
         """Save trends to JSON file."""
         filepath = self.output_dir / filename
         trends_dict = [asdict(trend) for trend in trends]
 
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(trends_dict, f, indent=2, ensure_ascii=False)
 
         logger.info(f"💾 Saved {len(trends)} trends to {filepath}")
@@ -286,15 +258,9 @@ class GoogleTrendsFetcher:
         for trend in trends:
             cat = trend.category
             if cat not in categories:
-                categories[cat] = {
-                    "count": 0,
-                    "avg_interest": 0,
-                    "rising_count": 0
-                }
+                categories[cat] = {"count": 0, "avg_interest": 0, "rising_count": 0}
             categories[cat]["count"] += 1
             categories[cat]["avg_interest"] += trend.avg_interest
-            if trend.trend_direction == "rising":
-                categories[cat]["rising_count"] += 1
 
         # Calculate averages
         for cat in categories:
@@ -302,8 +268,6 @@ class GoogleTrendsFetcher:
 
         return {
             "total_keywords": len(trends),
-            "rising_trends": len([t for t in trends if t.trend_direction == "rising"]),
-            "falling_trends": len([t for t in trends if t.trend_direction == "falling"]),
             "categories": categories,
             "top_10_by_interest": [
                 {
@@ -311,10 +275,9 @@ class GoogleTrendsFetcher:
                     "keyword": t.keyword,
                     "category": t.category,
                     "current_interest": t.current_interest,
-                    "trend": t.trend_direction
                 }
                 for i, t in enumerate(sorted_trends[:10])
-            ]
+            ],
         }
 
 
@@ -329,8 +292,8 @@ def main():
 
     trends = fetcher.fetch_trends(
         keywords=all_keywords,
-        timeframe='today 12-m',  # Last 12 months
-        geo=''  # Worldwide
+        timeframe="today 12-m",  # Last 12 months
+        geo="",  # Worldwide
     )
 
     if trends:
@@ -340,15 +303,13 @@ def main():
         analysis = fetcher.analyze_trends(trends)
 
         # Display results
-        logger.info("\n" + "="*60)
+        logger.info("\n" + "=" * 60)
         logger.info("📊 GOOGLE TRENDS ANALYSIS")
-        logger.info("="*60)
+        logger.info("=" * 60)
         logger.info(f"Total keywords tracked: {analysis['total_keywords']}")
-        logger.info(f"Rising trends: {analysis['rising_trends']}")
-        logger.info(f"Falling trends: {analysis['falling_trends']}")
 
         logger.info("\n📋 Category breakdown:")
-        for category, stats in analysis['categories'].items():
+        for category, stats in analysis["categories"].items():
             logger.info(
                 f"  {category}: {stats['count']} keywords, "
                 f"avg interest={stats['avg_interest']:.1f}, "
@@ -356,14 +317,14 @@ def main():
             )
 
         logger.info("\n🏆 Top 10 by current search interest:")
-        for item in analysis['top_10_by_interest']:
+        for item in analysis["top_10_by_interest"]:
             logger.info(
                 f"  #{item['rank']:2d} {item['keyword']:<25} "
                 f"Interest={item['current_interest']:3d} "
                 f"({item['trend']})"
             )
 
-        logger.info("="*60 + "\n")
+        logger.info("=" * 60 + "\n")
         logger.info("✅ Google Trends fetch complete!")
         logger.info("💡 This shows public search interest trends")
         logger.info("Next step: Run Supabase ingestion pipeline")

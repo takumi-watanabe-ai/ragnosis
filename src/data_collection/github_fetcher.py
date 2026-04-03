@@ -4,12 +4,11 @@ GitHub repository fetcher for RAG/LLM framework adoption signals.
 Fetches TOP repos overall to track RAG framework market share and ranking.
 """
 
-import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 
 import requests
 
@@ -33,6 +32,7 @@ class GitHubRepo:
     open_issues: int
     language: str
     topics: List[str]
+    rag_categories: List[str]
     created_at: str
     updated_at: str
     url: str
@@ -47,12 +47,13 @@ class GitHubFetcher:
     API_URL = "https://api.github.com"
     GRAPHQL_URL = "https://api.github.com/graphql"
 
-    def __init__(self, output_dir: str = "data", api_token: Optional[str] = None):
+    def __init__(self, output_dir: str = "data", api_token: Optional[str] = None, supabase_client: Optional[Any] = None):
         """Initialize fetcher."""
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
         self.api_token = api_token
+        self.supabase = supabase_client
 
         if api_token:
             self.session.headers.update(
@@ -63,6 +64,24 @@ class GitHubFetcher:
             )
         else:
             self.session.headers.update({"Accept": "application/vnd.github.v3+json"})
+
+    def _has_data_for_today(self) -> bool:
+        """Check if GitHub repos data already exists for today."""
+        if not self.supabase:
+            return False
+
+        try:
+            today = date.today().isoformat()
+            result = self.supabase.table("github_repos").select("id").eq("snapshot_date", today).limit(1).execute()
+            has_data = len(result.data) > 0
+
+            if has_data:
+                logger.info(f"✓ GitHub repos data already exists for {today}")
+
+            return has_data
+        except Exception as e:
+            logger.debug(f"Error checking for existing data: {e}")
+            return False
 
     def _graphql_search(
         self, topic: str, min_stars: int, max_results: int = 100
@@ -163,36 +182,43 @@ class GitHubFetcher:
 
     def fetch_by_topics(
         self,
-        max_per_topic: int = 30,
-        min_stars: int = 100,
+        max_per_topic: int = 10,
+        min_stars: int = 500,
+        min_months_since_update: int = 12,
     ) -> List[GitHubRepo]:
         """
-        Fetch repos using TARGETED topic-based search.
-        
-        This captures:
-        - Quality repos regardless of absolute star ranking
-        - Specialized tools (rerankers, embeddings) that may have fewer stars
-        - Better coverage of RAG ecosystem niches
-        
+        Fetch repos using TARGETED topic-based search with quality filters.
+
         Args:
-            max_per_topic: Max repos per topic (recommended: 20-50)
-            min_stars: Minimum stars threshold for quality
-            
+            max_per_topic: Max repos per topic (default: 10)
+            min_stars: Minimum stars threshold for quality (default: 500)
+            min_months_since_update: Only include repos updated within this many months (default: 12)
+
         Returns:
-            Deduplicated list of RAG repos from targeted searches
+            Deduplicated list of high-quality, active RAG repos
         """
+        # Check if data already exists for today
+        if self._has_data_for_today():
+            logger.info("⏭️  Skipping GitHub fetch - data already exists for today")
+            return []
+
         logger.info(f"📥 Fetching repos via targeted topic search...")
         logger.info(f"   Max per topic: {max_per_topic}, Min stars: {min_stars}")
+        logger.info(f"   Recent activity: updated within {min_months_since_update} months")
         
+        # Calculate cutoff date for recency filter (timezone-naive for comparison)
+        cutoff_date = datetime.now() - timedelta(days=min_months_since_update * 30)
+
         seen_ids = set()
         all_repos = []
         ranking_position = 1
-        
+        skipped_inactive = 0
+
         try:
             # Search by each category's topics
             for category_id, config in RAG_TAXONOMY.items():
                 logger.info(f"\n🔍 Searching category: {config['name']}")
-                
+
                 for topic in config["github_topics"]:
                     logger.info(f"   Topic: {topic}")
 
@@ -209,11 +235,24 @@ class GitHubFetcher:
 
                         for repo_data in repo_results:
                             repo_name = repo_data.get("full_name", "")
-                            
+
                             # Skip duplicates
                             if repo_name in seen_ids:
                                 continue
-                                
+
+                            # Check recency filter
+                            updated_at_str = repo_data.get("updated_at", "")
+                            if updated_at_str:
+                                try:
+                                    # Parse as timezone-aware, then convert to naive for comparison
+                                    updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+                                    updated_at_naive = updated_at.replace(tzinfo=None)
+                                    if updated_at_naive < cutoff_date:
+                                        skipped_inactive += 1
+                                        continue
+                                except (ValueError, AttributeError):
+                                    pass  # If parsing fails, include the repo
+
                             repo = self._parse_repo(
                                 repo_data,
                                 ranking_position=ranking_position
@@ -240,10 +279,11 @@ class GitHubFetcher:
             # Update ranking positions after sort
             for idx, repo in enumerate(all_repos):
                 repo.ranking_position = idx + 1
-                
+
             logger.info(f"\n✅ Fetched {len(all_repos)} unique repos via topic search")
             logger.info(f"   Covered {len(RAG_TAXONOMY)} categories")
-            
+            logger.info(f"   Skipped {skipped_inactive} inactive repos (not updated in {min_months_since_update} months)")
+
             return all_repos
             
         except Exception as e:
@@ -265,13 +305,19 @@ class GitHubFetcher:
             watchers = data.get("watchers_count", 0)
             open_issues = data.get("open_issues_count", 0)
             language = data.get("language", "")
-            topics = data.get("topics", [])
+            all_topics = data.get("topics", [])
             created_at = data.get("created_at", "")
             updated_at = data.get("updated_at", "")
             url = data.get("html_url", "")
 
+            # Filter topics to only include those in RAG_TAXONOMY
+            topics = self._filter_relevant_topics(all_topics)
+
             # Generate ID
             repo_id = f"gh_repo_{repo_name.replace('/', '_')}"
+
+            # Map topics to RAG categories
+            rag_categories = self._map_topics_to_categories(topics)
 
             return GitHubRepo(
                 id=repo_id,
@@ -284,6 +330,7 @@ class GitHubFetcher:
                 open_issues=open_issues,
                 language=language,
                 topics=topics,
+                rag_categories=rag_categories,
                 created_at=created_at,
                 updated_at=updated_at,
                 url=url,
@@ -293,6 +340,35 @@ class GitHubFetcher:
         except Exception as e:
             logger.debug(f"Error parsing repo: {e}")
             return None
+
+    def _filter_relevant_topics(self, topics: List[str]) -> List[str]:
+        """Filter topics to only include those defined in RAG_TAXONOMY."""
+        # Collect all valid GitHub topics from taxonomy
+        valid_topics = set()
+        for config in RAG_TAXONOMY.values():
+            valid_topics.update(t.lower() for t in config["github_topics"])
+
+        # Filter to only include taxonomy topics (case-insensitive match)
+        filtered = []
+        for topic in topics:
+            if topic.lower() in valid_topics:
+                filtered.append(topic)
+
+        return filtered
+
+    def _map_topics_to_categories(self, topics: List[str]) -> List[str]:
+        """Map repo topics to RAG taxonomy categories."""
+        categories = set()
+        topics_lower = [t.lower() for t in topics]
+
+        for category_id, config in RAG_TAXONOMY.items():
+            # Check if any repo topic matches this category's github_topics
+            for github_topic in config["github_topics"]:
+                if github_topic.lower() in topics_lower:
+                    categories.add(category_id)
+                    break
+
+        return sorted(list(categories))
 
     def _is_rag_related(
         self, repo_name: str, description: str, topics: List[str]

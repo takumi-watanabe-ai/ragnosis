@@ -19,7 +19,7 @@ interface SearchConfig {
 
 export interface SearchFilters {
   tags?: string[]
-  doc_type?: 'hf_model' | 'github_repo' | 'blog_article'
+  doc_type?: 'hf_model' | 'github_repo' | 'knowledge_base'
   category?: string
   author?: string
   owner?: string
@@ -95,8 +95,8 @@ export class HybridSearch {
       query_embedding: embedding,
       match_count: this.config.candidateCount,
       filter_doc_type: filters?.doc_type || null,
-      // Don't use tag filtering for blog articles - they have conceptual tags, semantic search is better
-      filter_tags: filters?.doc_type === 'blog_article' ? null : (filters?.tags || null)
+      // Don't use tag filtering for knowledge_base - they use sections, semantic search is better
+      filter_tags: filters?.doc_type === 'knowledge_base' ? null : (filters?.tags || null)
     }
     console.log('🔍 Vector search RPC params (tags only):', { filter_tags: rpcParams.filter_tags })
 
@@ -125,8 +125,8 @@ export class HybridSearch {
       search_query: query,
       match_limit: this.config.candidateCount,
       filter_doc_type: filters?.doc_type || null,
-      // Don't use tag filtering for blog articles - they have conceptual tags, semantic search is better
-      filter_tags: filters?.doc_type === 'blog_article' ? null : (filters?.tags || null)
+      // Don't use tag filtering for knowledge_base - they use sections, semantic search is better
+      filter_tags: filters?.doc_type === 'knowledge_base' ? null : (filters?.tags || null)
     }
     console.log('🔍 Text search RPC params:', JSON.stringify(rpcParams, null, 2))
 
@@ -187,7 +187,7 @@ export class HybridSearch {
       }
     })
 
-    // Apply boost to models/repos (compensate for shorter content vs long blog articles)
+    // Apply boost to models/repos (compensate for shorter content vs long documentation articles)
     // BM25 heavily penalizes short documents - need significant boost to compete
     scores.forEach((value) => {
       const docType = value.result.doc_type
@@ -229,7 +229,6 @@ export class HybridSearch {
       similarity: score,
       rerank_score: score,
       topics: d.topics || [],  // Include topics for tag matching
-      content: d.text,
       downloads: d.downloads,
       stars: d.stars,
       likes: d.likes,

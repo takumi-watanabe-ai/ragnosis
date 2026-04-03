@@ -5,10 +5,10 @@ Fetches TOP trending models to track RAG market share and ranking changes over t
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
-from typing import Dict, List, Optional
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 
 from huggingface_hub import HfApi
 
@@ -30,6 +30,7 @@ class HFModel:
     last_updated: Optional[str]
     description: str
     tags: List[str]
+    rag_categories: List[str]
     author: str
     url: str
     ranking_position: int  # Position in overall top models
@@ -42,12 +43,31 @@ class HFModelFetcher:
 
     API_URL = "https://huggingface.co/api/models"
 
-    def __init__(self, output_dir: str = "data", api_token: Optional[str] = None):
+    def __init__(self, output_dir: str = "data", api_token: Optional[str] = None, supabase_client: Optional[Any] = None):
         """Initialize fetcher."""
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.api_token = api_token
         self.hf_api = HfApi(token=api_token)
+        self.supabase = supabase_client
+
+    def _has_data_for_today(self) -> bool:
+        """Check if HuggingFace models data already exists for today."""
+        if not self.supabase:
+            return False
+
+        try:
+            today = date.today().isoformat()
+            result = self.supabase.table("hf_models").select("id").eq("snapshot_date", today).limit(1).execute()
+            has_data = len(result.data) > 0
+
+            if has_data:
+                logger.info(f"✓ HuggingFace models data already exists for {today}")
+
+            return has_data
+        except Exception as e:
+            logger.debug(f"Error checking for existing data: {e}")
+            return False
 
     def fetch_by_tags(
         self,
@@ -69,6 +89,11 @@ class HFModelFetcher:
         Returns:
             Deduplicated list of RAG models from targeted searches
         """
+        # Check if data already exists for today
+        if self._has_data_for_today():
+            logger.info("⏭️  Skipping HuggingFace fetch - data already exists for today")
+            return []
+
         logger.info(f"📥 Fetching models via targeted tag search...")
         logger.info(f"   Max per tag: {max_per_tag}, Min downloads: {min_downloads}")
 
@@ -161,8 +186,8 @@ class HFModelFetcher:
                 )
 
             # Extract tags
-            tags = getattr(model_info, "tags", []) or []
-            tags = [str(t) for t in tags if t]
+            all_tags = getattr(model_info, "tags", []) or []
+            all_tags = [str(t) for t in all_tags if t]
 
             # Extract task
             task = getattr(model_info, "pipeline_tag", "unknown") or "unknown"
@@ -172,8 +197,11 @@ class HFModelFetcher:
             description = ""
 
             # Filter: only keep RAG-related models (don't store flag, just filter)
-            if not self._is_rag_related(tags, task, model_name, description):
+            if not self._is_rag_related(all_tags, task, model_name, description):
                 return None
+
+            # Filter tags to only include those in RAG_TAXONOMY
+            tags = self._filter_relevant_tags(all_tags, task)
 
             # Extract author
             author = getattr(model_info, "author", None) or (
@@ -184,6 +212,9 @@ class HFModelFetcher:
             url = f"https://huggingface.co/{model_name}"
             model_id = f"hf_model_{model_name.replace('/', '_')}"
 
+            # Map tags to RAG categories
+            rag_categories = self._map_tags_to_categories(tags, task)
+
             return HFModel(
                 id=model_id,
                 model_name=model_name,
@@ -193,6 +224,7 @@ class HFModelFetcher:
                 last_updated=last_updated,
                 description=description,
                 tags=tags,
+                rag_categories=rag_categories,
                 author=author,
                 url=url,
                 ranking_position=ranking_position,
@@ -201,6 +233,38 @@ class HFModelFetcher:
         except Exception as e:
             logger.debug(f"Error parsing model: {e}")
             return None
+
+    def _filter_relevant_tags(self, tags: List[str], task: str) -> List[str]:
+        """Filter tags to only include those defined in RAG_TAXONOMY."""
+        # Collect all valid HF tags from taxonomy
+        valid_tags = set()
+        for config in RAG_TAXONOMY.values():
+            valid_tags.update(t.lower() for t in config["hf_tags"])
+
+        # Filter to only include taxonomy tags (case-insensitive match)
+        # Also always include the task if it's relevant
+        filtered = []
+        tags_with_task = tags + [task] if task != "unknown" else tags
+
+        for tag in tags_with_task:
+            if tag.lower() in valid_tags:
+                filtered.append(tag)
+
+        return filtered
+
+    def _map_tags_to_categories(self, tags: List[str], task: str) -> List[str]:
+        """Map model tags and task to RAG taxonomy categories."""
+        categories = set()
+        tags_and_task = [t.lower() for t in tags] + [task.lower()]
+
+        for category_id, config in RAG_TAXONOMY.items():
+            # Check if any tag/task matches this category's hf_tags
+            for hf_tag in config["hf_tags"]:
+                if hf_tag.lower() in tags_and_task:
+                    categories.add(category_id)
+                    break
+
+        return sorted(list(categories))
 
     def _is_rag_related(
         self, tags: List[str], task: str, name: str, description: str

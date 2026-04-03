@@ -42,7 +42,7 @@ def main():
     # STEP 1: Fetch HuggingFace Models (Tag-Driven)
     # ========================================
     logger.info("\n📥 STEP 1: Fetching HuggingFace models (tag-driven)...")
-    hf_fetcher = HFModelFetcher(api_token=hf_token)
+    hf_fetcher = HFModelFetcher(api_token=hf_token, supabase_client=supabase)
     
     # NEW: Use targeted tag-based search
     models = hf_fetcher.fetch_by_tags(
@@ -65,6 +65,7 @@ def main():
                 "likes": m.likes,
                 "ranking_position": m.ranking_position,
                 "tags": m.tags,
+                "rag_categories": m.rag_categories,
                 "url": m.url,
                 "last_updated": m.last_updated,
             }
@@ -77,12 +78,13 @@ def main():
     # STEP 2: Fetch GitHub Repos (Topic-Driven)
     # ========================================
     logger.info("\n📥 STEP 2: Fetching GitHub repos (topic-driven)...")
-    gh_fetcher = GitHubFetcher(api_token=gh_token)
+    gh_fetcher = GitHubFetcher(api_token=gh_token, supabase_client=supabase)
     
-    # NEW: Use targeted topic-based search
+    # NEW: Use targeted topic-based search with quality filters
     repos = gh_fetcher.fetch_by_topics(
-        max_per_topic=30,  # 30 repos per topic
-        min_stars=100  # Quality threshold
+        max_per_topic=10,  # 10 repos per topic (reduced from 30)
+        min_stars=500,  # Quality threshold (raised from 100)
+        min_months_since_update=12  # Only repos updated in last 12 months
     )
     
     # All repos from topic search are RAG-related (filtered during fetch)
@@ -100,6 +102,7 @@ def main():
                 "watchers": r.watchers,
                 "language": r.language,
                 "topics": r.topics,
+                "rag_categories": r.rag_categories,
                 "ranking_position": r.ranking_position,
                 "url": r.url,
                 "created_at": r.created_at,

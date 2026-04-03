@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "RAGnosis - Curated RAG Intelligence",
   description:
-    "A curated intelligence platform for RAG technology. Get quantitative metrics from HuggingFace and GitHub, plus expert knowledge from 4,000+ blog articles.",
+    "A curated intelligence platform for RAG technology. Get quantitative metrics from HuggingFace and GitHub, plus expert knowledge from official documentation.",
   icons: {
     icon: "/favicon.png",
   },

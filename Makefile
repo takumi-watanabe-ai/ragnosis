@@ -40,12 +40,12 @@ web: ## Run Next.js web app (starts edge functions + modern React UI)
 	@echo "Starting Next.js dev server..."
 	@cd web && npm run dev; kill `cat ../.edge-function.pid` 2>/dev/null || true; rm -f ../.edge-function.pid
 
-scrape-blogs: ## Scrape blog articles from sitemaps
-	@echo "📰 Scraping blog articles from sitemaps..."
+scrape-docs: ## Scrape documentation pages from sitemaps
+	@echo "📚 Scraping documentation pages from sitemaps..."
 	@echo ""
-	cd src/data_collection/content && python blog_pipeline.py
+	cd src/data_collection/content && python doc_pipeline.py
 	@echo ""
-	@echo "✅ Blog scraping complete!"
+	@echo "✅ Documentation scraping complete!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"
 
 scrape-trends: ## Scrape Google Trends data (monthly update)
@@ -110,7 +110,7 @@ eval-full: ## Run full evaluation (all 40 golden test cases)
 	@echo ""
 	@echo "✅ Evaluation complete! Check evaluation/results/ for output"
 
-eval: ## Run evaluation (N=samples, SECTION=sql_/blog_/etc, ALL=1 for all)
+eval: ## Run evaluation (N=samples, SECTION=sql_/docs_/etc, ALL=1 for all)
 	@echo "🧪 Running evaluation..."
 	@echo "⚠️  Make sure edge function is running (make chat)"
 	@echo ""

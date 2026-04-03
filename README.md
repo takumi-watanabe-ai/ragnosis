@@ -2,7 +2,7 @@
 
 > **AI-powered market intelligence for RAG technology decisions**
 
-A production RAG system that answers questions about RAG technology itself—combining quantitative metrics from HuggingFace and GitHub with expert knowledge from 4,000+ blog articles. Built to showcase sophisticated RAG patterns that go beyond basic vector search.
+A production RAG system that answers questions about RAG technology itself—combining quantitative metrics from HuggingFace and GitHub with expert knowledge from official documentation. Built to showcase sophisticated RAG patterns that go beyond basic vector search.
 
 **What makes this interesting:** Most RAG tutorials do naive vector search and call it done. This system demonstrates query planning, hybrid search, smart reranking, and cost optimization—techniques you need for production systems.
 
@@ -12,14 +12,14 @@ A production RAG system that answers questions about RAG technology itself—com
 
 **Query Planning** - Before searching anything, an LLM analyzes what you're actually asking:
 - Market data questions → Route to models/repos with metrics
-- Implementation questions → Route to blog articles with code examples
+- Implementation questions → Route to documentation with code examples
 - Comparisons → Fetch data from multiple sources, synthesize side-by-side
 - Troubleshooting → Match problem patterns, return diagnostic guides
 
 **Hybrid Search** - Combines complementary approaches because neither works alone:
 - Vector search finds conceptual matches ("retrieval quality" ≈ "improving accuracy")
 - Keyword search finds exact matches ("Supabase/gte-small" finds that specific model)
-- Searches across blog articles, HuggingFace models, and GitHub repos simultaneously
+- Searches across documentation, HuggingFace models, and GitHub repos simultaneously
 
 **Smart Reranking** - Initial search returns candidates, BM25 reranking finds what matters:
 - Scores based on query term coverage (not just vector similarity)
@@ -47,7 +47,7 @@ A production RAG system that answers questions about RAG technology itself—com
 
 Most RAG systems jump straight to vector search. That fails for questions like "What are the top embedding models?" because:
 - Vector search finds *similar* content, not ranked lists
-- You need structured data (GitHub stars, HuggingFace downloads) not just blog text
+- You need structured data (GitHub stars, HuggingFace downloads) not just text content
 - Different questions need different data sources
 
 By having the LLM analyze the query first, the system routes to the right data and formats answers appropriately.
@@ -66,17 +66,17 @@ Result: ~60% token reduction compared to enriching everything upfront.
 ## Key Implementation Highlights
 
 **Dual Vector Collections:**
-- Blog articles: 3,858 chunks optimized for semantic search
+- Documentation: Official docs from 9 sources (LangChain, LlamaIndex, Pinecone, HF, etc.)
 - Models/Repos: 61 entries with rich metadata (stars, downloads, trends)
 - Single query searches both collections in parallel via PostgreSQL CTEs
 
 **Full-Text + Vector Indexes:**
 ```sql
 -- Vector search with pgvector
-CREATE INDEX ON blog_chunks USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops);
 
--- Keyword search with GIN
-CREATE INDEX ON blog_chunks USING gin (to_tsvector('english', content));
+-- Keyword search with GIN (on name + description)
+-- No separate text column needed
 ```
 
 **BM25 Reranking in TypeScript:**
@@ -86,7 +86,7 @@ CREATE INDEX ON blog_chunks USING gin (to_tsvector('english', content));
 
 **Automated Data Pipeline:**
 - Daily: HuggingFace model stats, GitHub repo metrics, Google Trends
-- Weekly: Blog scraping from 15+ RAG engineering blogs
+- Weekly: Documentation scraping from 9 official sources
 - Embeddings generated on-demand for new content
 - Fully automated via GitHub Actions
 
@@ -112,7 +112,7 @@ CREATE INDEX ON blog_chunks USING gin (to_tsvector('english', content));
 
 **Implemented:**
 - ✅ Query planning with LLM routing
-- ✅ Dual vector search (blogs + models/repos)
+- ✅ Dual vector search (docs + models/repos)
 - ✅ Custom BM25 reranking
 - ✅ Post-rerank metadata enrichment
 - ✅ Automated data collection (4K+ articles)

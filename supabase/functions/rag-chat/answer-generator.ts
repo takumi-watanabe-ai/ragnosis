@@ -236,8 +236,8 @@ function buildAnswerPrompt(
     if (item.doc_type === "hf_model") context += ` (Type: HuggingFace Model)`;
     else if (item.doc_type === "github_repo")
       context += ` (Type: GitHub Repository)`;
-    else if (item.doc_type === "blog_article")
-      context += ` (Type: Blog Article)`;
+    else if (item.doc_type === "knowledge_base")
+      context += ` (Type: Knowledge Base Article)`;
     else if (item.doc_type === "google_trend")
       context += ` (Type: Google Trend)`;
 
@@ -261,7 +261,7 @@ function buildAnswerPrompt(
         context += `   Average Interest: ${item.avg_interest.toFixed(1)}%\n`;
       if (item.peak_interest)
         context += `   Peak Interest: ${item.peak_interest}%\n`;
-    } else if (item.doc_type === "blog_article") {
+    } else if (item.doc_type === "knowledge_base") {
       // Smart context allocation: top 2 sources get more context
       if (item.content) {
         const excerptLength =
@@ -276,8 +276,8 @@ function buildAnswerPrompt(
       }
     }
 
-    // Add description for non-blog items (optimized length)
-    if (item.description && item.doc_type !== "blog_article") {
+    // Add description for models/repos (optimized length)
+    if (item.description && item.doc_type !== "knowledge_base") {
       const desc = item.description
         .substring(0, config.search.context.descriptionMax)
         .replace(/\(part\s+\d+\/\d+\)/gi, '')

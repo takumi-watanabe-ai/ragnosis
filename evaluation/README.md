@@ -54,7 +54,7 @@ secondaryExcerpt: 150     // Context chars for sources 3-20
 // config.ts line 44
 structuredDataBoost: 1.2,  // Try 1.2-1.3 for better recall
 ```
-**Impact:** Better recall by helping models/repos compete with blogs
+**Impact:** Better recall by helping models/repos compete with documentation
 
 ### Option 2: Adjust Result Count (Quick)
 ```typescript
@@ -103,7 +103,7 @@ Located in `supabase/functions/rag-chat/answer-generator.ts`:
 - Check: structuredDataBoost ≥ 1.0 (line 44 config.ts)
 - Try: Increase boost to 1.2-1.3
 - Alternative: Increase candidateCount (50 → 60)
-- Cause: Models/repos not scoring high enough vs blogs
+- Cause: Models/repos not scoring high enough vs documentation
 
 **Precision drops (<0.35):**
 - Check: finalResultCount (line 40 config.ts)

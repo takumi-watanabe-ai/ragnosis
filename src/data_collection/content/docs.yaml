@@ -1,0 +1,110 @@
+# Official documentation sources for RAG ecosystem
+
+langchain_docs:
+  name: "LangChain Documentation"
+  source_id: "langchain-docs"
+  sitemap_url: "https://langchain.com/sitemap.xml"
+  url_pattern: "langchain.com/docs/"
+  exclude_patterns: []
+  enabled: true
+  priority: 1
+  section_patterns:
+    guides: "/docs/how_to/"
+    tutorials: "/docs/tutorials/"
+    concepts: "/docs/concepts/"
+    integrations: "/docs/integrations/"
+
+llamaindex_docs:
+  name: "LlamaIndex Documentation"
+  source_id: "llamaindex-docs"
+  sitemap_url: "https://docs.llamaindex.ai/sitemap.xml"
+  url_pattern: "docs.llamaindex.ai"
+  exclude_patterns: ["/community/"]
+  enabled: true
+  priority: 2
+  section_patterns:
+    guides: "/en/stable/understanding/"
+    examples: "/en/stable/examples/"
+    api: "/en/stable/api_reference/"
+
+pinecone_docs:
+  name: "Pinecone Documentation"
+  source_id: "pinecone-docs"
+  sitemap_url: "https://docs.pinecone.io/sitemap.xml"
+  url_pattern: "docs.pinecone.io/docs/"
+  exclude_patterns: ["/reference/api/"]
+  enabled: true
+  priority: 3
+  section_patterns:
+    guides: "/guides/"
+    reference: "/reference/"
+
+pinecone_learn:
+  name: "Pinecone Learn"
+  source_id: "pinecone-learn"
+  sitemap_url: "https://www.pinecone.io/sitemap.xml"
+  url_pattern: "https://www.pinecone.io/learn/"
+  exclude_patterns: ["/learn</loc>", "/learn/series/"]
+  enabled: true
+  priority: 4
+
+huggingface_docs:
+  name: "HuggingFace Documentation"
+  source_id: "huggingface-docs"
+  sitemap_url: "https://huggingface.co/sitemap.xml"
+  url_pattern: "huggingface.co/docs/"
+  exclude_patterns: []
+  enabled: true
+  priority: 5
+  section_patterns:
+    transformers: "/docs/transformers/"
+    datasets: "/docs/datasets/"
+    hub: "/docs/hub/"
+    inference: "/docs/inference-endpoints/"
+
+huggingface_learn:
+  name: "HuggingFace Learn"
+  source_id: "huggingface-learn"
+  sitemap_url: "https://huggingface.co/sitemap.xml"
+  url_pattern: "huggingface.co/learn/"
+  exclude_patterns: []
+  enabled: true
+  priority: 6
+
+weaviate_docs:
+  name: "Weaviate Documentation"
+  source_id: "weaviate-docs"
+  sitemap_url: "https://weaviate.io/sitemap.xml"
+  url_pattern: "weaviate.io/developers/weaviate"
+  exclude_patterns: ["/company/", "/platform/"]
+  enabled: true
+  priority: 7
+  section_patterns:
+    concepts: "/developers/weaviate/concepts/"
+    configuration: "/developers/weaviate/config/"
+    api: "/developers/weaviate/api/"
+
+chromadb_docs:
+  name: "ChromaDB Documentation"
+  source_id: "chromadb-docs"
+  sitemap_url: "https://docs.trychroma.com/sitemap.xml"
+  url_pattern: "docs.trychroma.com"
+  exclude_patterns: []
+  enabled: true
+  priority: 8
+  section_patterns:
+    guides: "/guides/"
+    reference: "/reference/"
+
+qdrant_docs:
+  name: "Qdrant Documentation"
+  source_id: "qdrant-docs"
+  sitemap_url: "https://qdrant.tech/sitemap.xml"
+  url_pattern: "qdrant.tech/documentation/"
+  exclude_patterns: ["/articles/"]
+  enabled: true
+  priority: 9
+  section_patterns:
+    guides: "/documentation/guides/"
+    concepts: "/documentation/concepts/"
+    tutorials: "/documentation/tutorials/"

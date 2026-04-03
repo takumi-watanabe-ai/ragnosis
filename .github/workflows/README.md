@@ -6,8 +6,8 @@ Three separate workflows for efficient daily data collection with failure isolat
 
 ```
 8:00 AM UTC  → daily-market-data.yml   (Time-series: HF, GitHub, Trends)
-9:00 AM UTC  → daily-blog-scrape.yml   (RSS feeds)
-10:00 AM UTC → daily-embeddings.yml    (Load model ONCE, embed all)
+10:00 AM UTC → weekly-docs.yml         (Documentation scraping - Mondays only)
+             → daily-embeddings.yml    (Load model ONCE, embed all)
 ```
 
 ## 1. Daily Market Data (Critical)
@@ -28,18 +28,18 @@ Three separate workflows for efficient daily data collection with failure isolat
 - HF or GitHub fail → Job fails (critical data)
 - Trends fail → Warning only (can be flaky)
 
-## 2. Daily Blog Scrape (Independent)
+## 2. Weekly Documentation Scrape (Independent)
 
-**File:** `daily-blog-scrape.yml`
-**Schedule:** 9:00 AM UTC
-**Runtime:** ~30 seconds
+**File:** `weekly-docs.yml`
+**Schedule:** 10:00 AM UTC every Monday
+**Runtime:** ~2-3 minutes
 **Failure:** Less critical - can retry
 
 **What it does:**
-- Scrapes RSS feeds from 5 blog sources
-- Filters for RAG-related content
-- Inserts to `blog_articles` SQL table
-- Does NOT create embeddings (saves time)
+- Scrapes documentation pages from 9 official sources (LangChain, LlamaIndex, Pinecone, etc.)
+- Extracts structured documentation content
+- Inserts to `knowledge_base` SQL table
+- Does NOT create embeddings (handled by daily-embeddings.yml)
 
 **Failure handling:**
 - Scrape fails → Job fails, but doesn't affect market data
@@ -54,11 +54,11 @@ Three separate workflows for efficient daily data collection with failure isolat
 
 **What it does:**
 - Loads sentence-transformer model ONCE
-- Embeds ALL new data from today:
-  - New HF models
-  - New GitHub repos
-  - New blog articles
-- Inserts to `ragnosis_docs` vector table
+- Embeds ALL new data:
+  - New HF models (daily)
+  - New GitHub repos (daily)
+  - New documentation pages (weekly)
+- Inserts to `documents` vector table
 - Skips existing entries (deduplication)
 
 **Failure handling:**
@@ -70,12 +70,12 @@ Three separate workflows for efficient daily data collection with failure isolat
 ### ✅ Advantages
 
 1. **Failure Isolation**
-   - Blogs fail ≠ Market data fails
+   - Documentation scraping fail ≠ Market data fails
    - Each can retry independently
 
 2. **Performance**
-   - Model loads ONCE per day (not 3 times)
-   - 6-7 min total vs 8+ min if embedded after each scrape
+   - Model loads ONCE per day (not multiple times)
+   - Efficient batch processing of all new content
 
 3. **Flexibility**
    - Can run manually: Actions → Select workflow → Run workflow
@@ -86,12 +86,16 @@ Three separate workflows for efficient daily data collection with failure isolat
    - Minimal GitHub Actions minutes
    - Efficient batch processing
 
-### 📊 Total Daily Runtime
+### 📊 Total Runtime
 
+**Daily:**
 - Market data: 2 min
-- Blog scrape: 0.5 min
 - Embeddings: 4 min
-- **Total: ~6.5 minutes/day**
+- **Total: ~6 minutes/day**
+
+**Weekly (Mondays):**
+- Documentation scraping: 2-3 min
+- **Total: ~8-9 minutes on Mondays**
 
 ## Required Secrets
 
@@ -136,6 +140,6 @@ If scraping fails (MUST retry):
 # Retry market data
 python src/data_collection/pipeline.py
 
-# Retry blog scrape
-make scrape-feeds
+# Retry documentation scrape
+make scrape-docs
 ```
