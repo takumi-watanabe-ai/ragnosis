@@ -7,6 +7,7 @@ import type {
 } from "@/lib/market-analysis";
 import { ModelPositionChart } from "./ModelPositionChart";
 import { RepoPositionChart } from "./RepoPositionChart";
+import { TabSwitch } from "./TabSwitch";
 
 interface CompetitivePositionAnalysisProps {
   modelPositions: ModelCompetitivePosition[];
@@ -21,42 +22,11 @@ export function CompetitivePositionAnalysis({
   repoPositions,
   isTouchDevice,
 }: CompetitivePositionAnalysisProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("model");
+  const [activeTab, setActiveTab] = useState<Tab>("repo");
 
   return (
     <div>
-      <div className="flex items-center gap-6 mb-6">
-        <button
-          onClick={() => setActiveTab("model")}
-          className={`text-sm font-medium tracking-wide uppercase transition-colors ${
-            activeTab === "model"
-              ? "text-charcoal"
-              : "text-stone hover:text-charcoal"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            {activeTab === "model" && (
-              <span className="w-2 h-2 rounded-full bg-charcoal" />
-            )}
-            Model
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab("repo")}
-          className={`text-sm font-medium tracking-wide uppercase transition-colors ${
-            activeTab === "repo"
-              ? "text-charcoal"
-              : "text-stone hover:text-charcoal"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            {activeTab === "repo" && (
-              <span className="w-2 h-2 rounded-full bg-charcoal" />
-            )}
-            Repo
-          </span>
-        </button>
-      </div>
+      <TabSwitch activeTab={activeTab} onTabChange={setActiveTab} />
 
       {activeTab === "model" ? (
         <ModelPositionChart

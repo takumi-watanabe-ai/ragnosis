@@ -8,22 +8,18 @@ import {
   type TrendsTimeSeries,
 } from "@/lib/trends-analysis";
 import {
-  getModelCompetitivePosition,
-  getRepoCompetitivePosition,
-  type ModelCompetitivePosition,
-  type RepoCompetitivePosition,
+  getTaskAnalysis,
+  getTopicAnalysis,
+  type TaskAnalysis,
+  type TopicAnalysis,
 } from "@/lib/market-analysis";
 import { TrendsChart } from "@/app/market/components/TrendsChart";
-import { CompetitivePositionAnalysis } from "@/app/market/components/CompetitivePositionAnalysis";
+import { OpportunityAnalysis } from "@/app/market/components/OpportunityAnalysis";
 
 export default function Home() {
   const [trendsData, setTrendsData] = useState<TrendsTimeSeries[]>([]);
-  const [modelPositions, setModelPositions] = useState<
-    ModelCompetitivePosition[]
-  >([]);
-  const [repoPositions, setRepoPositions] = useState<RepoCompetitivePosition[]>(
-    [],
-  );
+  const [tasks, setTasks] = useState<TaskAnalysis[]>([]);
+  const [topics, setTopics] = useState<TopicAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [showHero, setShowHero] = useState(false);
@@ -38,18 +34,18 @@ export default function Home() {
 
     // Staggered entrance animations
     setTimeout(() => setShowHero(true), 100);
-    setTimeout(() => setShowQuestions(true), 1200);
+    setTimeout(() => setShowQuestions(true), 600);
 
     async function loadData() {
       try {
-        const [trendsData, modelPosData, repoPosData] = await Promise.all([
+        const [trendsData, taskData, topicData] = await Promise.all([
           getTrendsTimeSeries(),
-          getModelCompetitivePosition(),
-          getRepoCompetitivePosition(),
+          getTaskAnalysis(),
+          getTopicAnalysis(),
         ]);
         setTrendsData(trendsData);
-        setModelPositions(modelPosData);
-        setRepoPositions(repoPosData);
+        setTasks(taskData);
+        setTopics(topicData);
       } catch (err) {
         console.error("Error loading data:", err);
       } finally {
@@ -122,7 +118,7 @@ export default function Home() {
       {/* Hero Section with Logo */}
       <main className="relative px-6 sm:px-12">
         <div
-          className={`py-16 sm:py-24 md:py-32 text-center transition-all duration-1000 ${
+          className={`py-16 sm:py-24 md:pb-16 md:pt-32 text-center transition-all duration-1000 ${
             showHero ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
@@ -131,9 +127,9 @@ export default function Home() {
             <Image
               src="/logo.svg"
               alt="RAGnosis Logo"
-              width={160}
-              height={160}
-              className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40"
+              width={192}
+              height={192}
+              className="w-40 h-40 sm:w-48 sm:h-48 md:w-48 md:h-48"
               priority
             />
           </div>
@@ -204,8 +200,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Competitive Position Map */}
-        {!loading && modelPositions.length > 0 && repoPositions.length > 0 && (
+        {/* Opportunity Analysis */}
+        {!loading && tasks.length > 0 && topics.length > 0 && (
           <div
             ref={positionRef}
             className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
@@ -216,16 +212,16 @@ export default function Home() {
           >
             <div className="mb-8">
               <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-charcoal mb-2 uppercase">
-                Competitive Position Map
+                Opportunity Analysis
               </h2>
               <p className="text-xs sm:text-sm text-stone font-light">
-                Models by recency vs downloads (bubble = engagement). Toggle to
-                see repos by age vs stars.
+                Multi-dimensional scoring: market size, competition,
+                concentration, success rate. Bubble size = Market size.
               </p>
             </div>
-            <CompetitivePositionAnalysis
-              modelPositions={modelPositions}
-              repoPositions={repoPositions}
+            <OpportunityAnalysis
+              tasks={tasks}
+              topics={topics}
               isTouchDevice={isTouchDevice}
             />
           </div>

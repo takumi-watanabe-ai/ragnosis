@@ -3,15 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import {
   getCategoryDistribution,
   getTopModels,
   getTopRepos,
@@ -28,6 +19,12 @@ import {
 } from "@/lib/analytics";
 import { EcosystemStats } from "@/app/components/EcosystemStats";
 import { ModelCategoryDistribution } from "@/app/components/ModelCategoryDistribution";
+import {
+  HorizontalBarChart,
+  VerticalBarChart,
+  TagCloud,
+  ChartSection,
+} from "@/app/components/charts";
 
 export default function AnalyticsPage() {
   const [categories, setCategories] = useState<CategoryData[]>([]);
@@ -171,147 +168,66 @@ export default function AnalyticsPage() {
 
           {/* Top Models */}
           <ChartSection title="Top Models by Downloads">
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart
-                data={topModels}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 150, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                <XAxis type="number" stroke="#666666" />
-                <YAxis
-                  type="category"
-                  dataKey="model_name"
-                  stroke="#666666"
-                  tick={{ fontSize: 11 }}
-                  width={140}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="downloads" fill="#222222" />
-              </BarChart>
-            </ResponsiveContainer>
+            <HorizontalBarChart
+              data={topModels}
+              dataKey="downloads"
+              labelKey="model_name"
+              barColor="#222222"
+            />
           </ChartSection>
 
           {/* Top Repos */}
           <ChartSection title="Top GitHub Repositories by Stars">
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart
-                data={topRepos}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 150, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                <XAxis type="number" stroke="#666666" />
-                <YAxis
-                  type="category"
-                  dataKey="repo_name"
-                  stroke="#666666"
-                  tick={{ fontSize: 11 }}
-                  width={140}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="stars" fill="#333333" />
-              </BarChart>
-            </ResponsiveContainer>
+            <HorizontalBarChart
+              data={topRepos}
+              dataKey="stars"
+              labelKey="repo_name"
+              barColor="#333333"
+            />
           </ChartSection>
 
           {/* Language Distribution */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
             <ChartSection title="Repositories by Language">
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={languages.slice(0, 10)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                  <XAxis
-                    dataKey="language"
-                    stroke="#666666"
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                  />
-                  <YAxis stroke="#666666" />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="count" name="Repository Count" fill="#666666" />
-                </BarChart>
-              </ResponsiveContainer>
+              <VerticalBarChart
+                data={languages.slice(0, 10)}
+                dataKey="count"
+                labelKey="language"
+                barName="Repository Count"
+                barColor="#666666"
+              />
             </ChartSection>
 
             <ChartSection title="Total Stars by Language">
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={languages.slice(0, 10)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                  <XAxis
-                    dataKey="language"
-                    stroke="#666666"
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                  />
-                  <YAxis stroke="#666666" />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar
-                    dataKey="total_stars"
-                    name="Total Stars"
-                    fill="#999999"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              <VerticalBarChart
+                data={languages.slice(0, 10)}
+                dataKey="total_stars"
+                labelKey="language"
+                barName="Total Stars"
+                barColor="#999999"
+              />
             </ChartSection>
           </div>
 
           {/* Author Leaderboard */}
           <ChartSection title="Top Authors by Total Downloads">
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={authors}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                <XAxis
-                  dataKey="author"
-                  stroke="#666666"
-                  angle={-45}
-                  textAnchor="end"
-                  height={100}
-                />
-                <YAxis stroke="#666666" />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="total_downloads" fill="#222222" />
-              </BarChart>
-            </ResponsiveContainer>
+            <VerticalBarChart
+              data={authors}
+              dataKey="total_downloads"
+              labelKey="author"
+              height={400}
+              barColor="#222222"
+            />
           </ChartSection>
 
           {/* Tags & Topics */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <ChartSection title="Popular Model Tags">
-              <div className="flex flex-wrap gap-2">
-                {tags.map((tag, idx) => (
-                  <span
-                    key={`tag-${idx}-${tag.tag}`}
-                    className="px-3 py-2 border border-stone-border bg-white text-xs text-charcoal tracking-wide"
-                    style={{
-                      fontSize: Math.max(10, Math.min(16, 10 + tag.count / 5)),
-                    }}
-                  >
-                    {tag.tag} ({tag.count})
-                  </span>
-                ))}
-              </div>
+              <TagCloud tags={tags} />
             </ChartSection>
 
             <ChartSection title="Popular Repo Topics">
-              <div className="flex flex-wrap gap-2">
-                {topics.map((topic, idx) => (
-                  <span
-                    key={`topic-${idx}-${topic.tag}`}
-                    className="px-3 py-2 border border-stone-border bg-white text-xs text-charcoal tracking-wide"
-                    style={{
-                      fontSize: Math.max(
-                        10,
-                        Math.min(16, 10 + topic.count / 5),
-                      ),
-                    }}
-                  >
-                    {topic.tag} ({topic.count})
-                  </span>
-                ))}
-              </div>
+              <TagCloud tags={topics} />
             </ChartSection>
           </div>
         </div>
@@ -330,49 +246,4 @@ export default function AnalyticsPage() {
       </footer>
     </div>
   );
-}
-
-function ChartSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-12 border border-stone-border bg-white p-6 sm:p-8">
-      <h2 className="text-sm sm:text-base font-normal text-charcoal uppercase tracking-[0.15em] mb-6">
-        {title}
-      </h2>
-      {children}
-    </div>
-  );
-}
-
-interface TooltipProps {
-  active?: boolean;
-  payload?: Array<{
-    name: string;
-    value: number | string;
-  }>;
-}
-
-function CustomTooltip({ active, payload }: TooltipProps) {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white border border-stone-border p-3 shadow-sm">
-        {payload.map((entry, index: number) => (
-          <div key={index} className="text-xs text-charcoal mb-1">
-            <span className="font-medium">{entry.name}: </span>
-            <span className="font-light">
-              {typeof entry.value === "number"
-                ? entry.value.toLocaleString()
-                : entry.value}
-            </span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return null;
 }

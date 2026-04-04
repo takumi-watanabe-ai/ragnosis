@@ -4,8 +4,13 @@
  */
 
 import type { SearchResult, QueryIntent } from "./types.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { config } from "./config.ts";
 import { verifyAnswer } from "./answer-verifier.ts";
+import { getLLMClient } from "./services/llm-client.ts";
+import { getFeatureFlagService } from "./services/feature-flags.ts";
+import { PATTERNS, RESPONSE_MESSAGES, LOG_PREFIX } from "./utils/constants.ts";
+import { cleanPartSuffix, markdownLink, truncate } from "./utils/formatters.ts";
 
 /**
  * Generate answer from search results
@@ -14,9 +19,10 @@ export async function generateAnswer(
   query: string,
   results: SearchResult[],
   intent: QueryIntent,
+  supabase?: SupabaseClient,
 ): Promise<string> {
   // For market intelligence list queries, use LLM with strict grounding
-  const isListQuery = /\b(top|best|popular|trending|list)\b/i.test(query);
+  const isListQuery = PATTERNS.LIST_QUERY.test(query);
   if (intent === "market_intelligence" && isListQuery && results.length > 0) {
     // Use LLM for context, but with strict anti-hallucination rules
     const prompt = buildMarketIntelligencePrompt(query, results);
@@ -27,30 +33,16 @@ export async function generateAnswer(
   const prompt = buildAnswerPrompt(query, results, intent);
 
   try {
-    const response = await fetch(`${config.llm.url}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.llm.model,
-        prompt,
-        stream: false,
-        options: {
-          temperature: config.llm.answer.temperature,
-          num_predict: config.llm.answer.maxTokens,
-        },
-      }),
-    });
+    const llmClient = getLLMClient();
+    let answer = await llmClient.generate(prompt);
 
-    if (!response.ok) {
-      throw new Error(`LLM request failed: ${response.statusText}`);
-    }
+    // Answer verification if enabled (from database)
+    if (supabase) {
+      const featureFlags = getFeatureFlagService(supabase);
+      const verificationEnabled = await featureFlags.isEnabled('answer_verification');
 
-    const data = await response.json();
-    let answer = data.response.trim();
-
-    // Answer verification if enabled
-    if (config.features.answerVerification.enabled) {
-      const verification = await verifyAnswer(answer, results);
+      if (verificationEnabled) {
+        const verification = await verifyAnswer(answer, results);
 
       // Only use verified answer if faithfulness is acceptable
       if (
@@ -59,19 +51,20 @@ export async function generateAnswer(
       ) {
         answer = verification.verifiedAnswer;
         console.log(
-          `✅ Using verified answer (faithfulness: ${verification.faithfulnessScore.toFixed(2)})`,
+          `${LOG_PREFIX.SUCCESS} Using verified answer (faithfulness: ${verification.faithfulnessScore.toFixed(2)})`,
         );
       } else {
         console.log(
-          `⚠️ Verification faithfulness too low (${verification.faithfulnessScore.toFixed(2)}), using original`,
+          `${LOG_PREFIX.WARNING} Verification faithfulness too low (${verification.faithfulnessScore.toFixed(2)}), using original`,
         );
+      }
       }
     }
 
     return answer;
   } catch (error) {
-    console.error("❌ Answer generation failed:", error);
-    return "Sorry, I encountered an error generating the answer. Please try again.";
+    console.error(`${LOG_PREFIX.ERROR} Answer generation failed:`, error);
+    return RESPONSE_MESSAGES.GENERATION_ERROR;
   }
 }
 
@@ -84,7 +77,7 @@ function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): 
 
   results.forEach((item, i) => {
     const num = i + 1;
-    const cleanName = item.name.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim();
+    const cleanName = cleanPartSuffix(item.name);
 
     context += `${num}. ${cleanName}\n`;
     context += `   URL: ${item.url}\n`;
@@ -94,13 +87,13 @@ function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): 
       if (item.likes) context += `   Likes: ${item.likes.toLocaleString()}\n`;
       if (item.author) context += `   Author: ${item.author}\n`;
       if (item.task) context += `   Task: ${item.task}\n`;
-      if (item.description) context += `   Description: ${item.description.substring(0, 200).replace(/\(part\s+\d+\/\d+\)/gi, '')}\n`;
+      if (item.description) context += `   Description: ${truncate(cleanPartSuffix(item.description), 200)}\n`;
     } else if (docType === "github_repo") {
       if (item.stars) context += `   Stars: ${item.stars.toLocaleString()}\n`;
       if (item.forks) context += `   Forks: ${item.forks.toLocaleString()}\n`;
       if (item.owner) context += `   Owner: ${item.owner}\n`;
       if (item.language) context += `   Language: ${item.language}\n`;
-      if (item.description) context += `   Description: ${item.description.substring(0, 200).replace(/\(part\s+\d+\/\d+\)/gi, '')}\n`;
+      if (item.description) context += `   Description: ${truncate(cleanPartSuffix(item.description), 200)}\n`;
     }
     context += "\n";
   });
@@ -144,69 +137,15 @@ Answer:`;
  */
 async function generateWithLLM(prompt: string): Promise<string> {
   try {
-    const response = await fetch(`${config.llm.url}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.llm.model,
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.3,
-          num_predict: 1000,
-        },
-      }),
+    const llmClient = getLLMClient();
+    return await llmClient.generate(prompt, {
+      temperature: 0.3,
+      maxTokens: 1000,
     });
-
-    if (!response.ok) {
-      throw new Error(`LLM request failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data.response.trim();
   } catch (error) {
-    console.error("❌ LLM generation failed:", error);
-    return "Sorry, I encountered an error generating the answer.";
+    console.error(`${LOG_PREFIX.ERROR} LLM generation failed:`, error);
+    return RESPONSE_MESSAGES.GENERATION_ERROR;
   }
-}
-
-/**
- * Direct formatting for market intelligence (fallback, not used currently)
- */
-function formatMarketIntelligence(results: SearchResult[]): string {
-  const docType = results[0]?.doc_type;
-  let answer = "";
-
-  results.forEach((item, i) => {
-    const num = i + 1;
-    const cleanName = item.name
-      .replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, "")
-      .trim();
-    answer += `\n${num}. **[${cleanName}](${item.url})**\n`;
-
-    if (docType === "hf_model") {
-      if (item.downloads)
-        answer += `   - Downloads: ${item.downloads.toLocaleString()}\n`;
-      if (item.likes) answer += `   - Likes: ${item.likes.toLocaleString()}\n`;
-      if (item.ranking_position)
-        answer += `   - Ranking: #${item.ranking_position}\n`;
-      if (item.author) answer += `   - Author: ${item.author}\n`;
-    } else if (docType === "github_repo") {
-      if (item.stars) answer += `   - Stars: ${item.stars.toLocaleString()}\n`;
-      if (item.forks) answer += `   - Forks: ${item.forks.toLocaleString()}\n`;
-      if (item.owner) answer += `   - Owner: ${item.owner}\n`;
-      if (item.language) answer += `   - Language: ${item.language}\n`;
-    } else if (docType === "google_trend") {
-      if (item.current_interest)
-        answer += `   - Current Interest: ${item.current_interest}%\n`;
-      if (item.avg_interest)
-        answer += `   - Average Interest: ${item.avg_interest.toFixed(1)}%\n`;
-      if (item.peak_interest)
-        answer += `   - Peak Interest: ${item.peak_interest}%\n`;
-    }
-  });
-
-  return answer.trim();
 }
 
 /**
@@ -222,13 +161,11 @@ function buildAnswerPrompt(
 
   results.forEach((item, i) => {
     // Clean both name and title to remove (Part X/Y)
-    const cleanName = item.name
-      .replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, "")
-      .trim();
-    const cleanTitle =
-      item.metadata?.title?.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, "").trim() ||
-      cleanName;
-    const sourceLink = `**[${cleanTitle}](${item.url})**`;
+    const cleanName = cleanPartSuffix(item.name);
+    const cleanTitle = item.metadata?.title
+      ? cleanPartSuffix(item.metadata.title)
+      : cleanName;
+    const sourceLink = markdownLink(cleanTitle, item.url);
 
     context += `\n- ${sourceLink}`;
 
@@ -268,20 +205,20 @@ function buildAnswerPrompt(
           i < 2
             ? config.search.context.primaryExcerpt
             : config.search.context.secondaryExcerpt;
-        const excerpt = item.content
-          .substring(0, excerptLength)
-          .replace(/\(part\s+\d+\/\d+\)/gi, '')
-          .trim();
-        context += `   ${excerpt}...\n`;
+        const excerpt = truncate(
+          cleanPartSuffix(item.content),
+          excerptLength
+        );
+        context += `   ${excerpt}\n`;
       }
     }
 
     // Add description for models/repos (optimized length)
     if (item.description && item.doc_type !== "knowledge_base") {
-      const desc = item.description
-        .substring(0, config.search.context.descriptionMax)
-        .replace(/\(part\s+\d+\/\d+\)/gi, '')
-        .trim();
+      const desc = truncate(
+        cleanPartSuffix(item.description),
+        config.search.context.descriptionMax
+      );
       context += `   ${desc}\n`;
     }
   });

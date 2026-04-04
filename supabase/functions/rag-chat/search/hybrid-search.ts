@@ -6,6 +6,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import type { SearchResult } from '../types.ts'
 import { createReranker } from '../reranker.ts'
+import { config } from '../config.ts'
 
 // Supabase.ai is globally available in edge runtime
 declare const Supabase: any
@@ -14,7 +15,6 @@ interface SearchConfig {
   candidateCount: number
   finalResultCount: number
   descriptionMax: number
-  structuredDataBoost: number
 }
 
 export interface SearchFilters {
@@ -169,8 +169,8 @@ export class HybridSearch {
     filters?: SearchFilters
   ): SearchResult[] {
     const k = 60  // RRF constant (typical value)
-    const vectorWeight = 0.7  // 70% weight for semantic search
-    const keywordWeight = 0.3  // 30% weight for keyword search
+    const vectorWeight = config.search.reranker.fusion.vectorWeight
+    const keywordWeight = config.search.reranker.fusion.bm25Weight
     const scores = new Map<string, { result: SearchResult; score: number }>()
 
     // Add vector search scores (70% weight)
@@ -190,15 +190,6 @@ export class HybridSearch {
         scores.get(result.id)!.score += score
       } else {
         scores.set(result.id, { result, score })
-      }
-    })
-
-    // Apply boost to models/repos (compensate for shorter content vs long documentation articles)
-    // BM25 heavily penalizes short documents - need significant boost to compete
-    scores.forEach((value) => {
-      const docType = value.result.doc_type
-      if (docType === 'hf_model' || docType === 'github_repo') {
-        value.score *= this.config.structuredDataBoost
       }
     })
 

@@ -7,6 +7,9 @@
 
 import type { QueryInsight, PrimaryIntent, DocTypeWeights, QueryPlan } from './types.ts'
 import { config } from './config.ts'
+import { getLLMClient } from './services/llm-client.ts'
+import { getFeatureFlagService } from './services/feature-flags.ts'
+import { THRESHOLDS, WEIGHTS, LOG_PREFIX } from './utils/constants.ts'
 
 interface LLMInsightResponse {
   primary_intent: PrimaryIntent
@@ -21,13 +24,16 @@ interface LLMInsightResponse {
  * Get LLM-based query insights with doc_type weights
  * Returns null if planner is disabled or fails
  */
-export async function getQueryInsight(
+async function getQueryInsight(
   query: string,
   supabase: any
 ): Promise<QueryInsight | null> {
   try {
-    // Skip planner if disabled
-    if (!config.features.queryPlanner.enabled) {
+    // Check if query planner is enabled (from database)
+    const featureFlags = getFeatureFlagService(supabase)
+    const isEnabled = await featureFlags.isEnabled('query_planner')
+
+    if (!isEnabled) {
       return null
     }
 
@@ -35,58 +41,19 @@ export async function getQueryInsight(
     const { data: meta, error } = await supabase.rpc('get_filter_options')
 
     if (error || !meta) {
-      console.error('⚠️ Metadata fetch failed:', error)
+      console.error(`${LOG_PREFIX.WARNING} Metadata fetch failed:`, error)
       return null
     }
 
     // Build LLM prompt for query understanding
     const prompt = buildInsightPrompt(query, meta)
 
-    // Call LLM
-    const response = await fetch(`${config.llm.url}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.llm.model,
-        messages: [{ role: 'user', content: prompt }],
-        stream: false,
-        format: 'json',
-        options: {
-          temperature: config.llm.planning.temperature,
-          num_predict: config.llm.planning.maxTokens,
-        },
-      }),
-    })
+    // Call LLM with automatic JSON parsing
+    const llmClient = getLLMClient()
+    const llmResponse = await llmClient.chatJson<LLMInsightResponse>(prompt)
 
-    if (!response.ok) {
-      console.error('⚠️ LLM insight extraction failed')
-      return null
-    }
-
-    const data = await response.json()
-    let content = data.message.content.trim()
-
-    console.log('🔍 Raw LLM response:', content.substring(0, 300))
-
-    // Extract JSON if wrapped in markdown
-    const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) ||
-                      content.match(/(\{[\s\S]*\})/)
-
-    if (jsonMatch) {
-      content = jsonMatch[1] || jsonMatch[0]
-    }
-
-    // Clean common JSON issues
-    content = cleanJsonString(content)
-
-    let llmResponse: LLMInsightResponse
-    try {
-      llmResponse = JSON.parse(content)
-    } catch (parseError) {
-      console.error('❌ JSON parse failed:', parseError)
-      console.error('📄 Content:', content)
+    if (!llmResponse) {
+      console.error(`${LOG_PREFIX.WARNING} LLM insight extraction failed`)
       return null
     }
 
@@ -106,12 +73,12 @@ export async function getQueryInsight(
       reason: `Intent: ${llmResponse.primary_intent}`,
     }
 
-    console.log('🎯 Query Insight:', JSON.stringify(insight, null, 2))
+    console.log(`${LOG_PREFIX.PLAN} Query Insight:`, JSON.stringify(insight, null, 2))
 
     return insight
 
   } catch (error) {
-    console.error('❌ Query insight error:', error)
+    console.error(`${LOG_PREFIX.ERROR} Query insight error:`, error)
     return null
   }
 }
@@ -120,7 +87,7 @@ export async function getQueryInsight(
  * Build LLM prompt for extracting query insights
  */
 function buildInsightPrompt(query: string, meta: any): string {
-  const availableTasks = meta.tasks?.slice(0, 15) || []
+  const availableTasks = meta.tasks?.slice(0, THRESHOLDS.MAX_TASKS_IN_PROMPT) || []
 
   return `Analyze this query and extract insights for weighted multi-source search.
 
@@ -172,56 +139,14 @@ Respond with VALID JSON only (no trailing text):
 }
 
 /**
- * Clean JSON string from common LLM issues
- */
-function cleanJsonString(json: string): string {
-  let cleaned = json
-    // Remove trailing commas before closing braces/brackets
-    .replace(/,(\s*[}\]])/g, '$1')
-    // Remove comments (// and /* */)
-    .replace(/\/\/.*/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    // Remove any text before first {
-    .replace(/^[^{]*/, '')
-    // Remove any text after last }
-    .replace(/[^}]*$/, '')
-    .trim()
-
-  // Handle truncated JSON - if it doesn't end with }, try to complete it
-  if (!cleaned.endsWith('}')) {
-    // Count open braces
-    const openBraces = (cleaned.match(/\{/g) || []).length
-    const closeBraces = (cleaned.match(/\}/g) || []).length
-    const missing = openBraces - closeBraces
-
-    // Add missing closing braces
-    if (missing > 0) {
-      // First, close any open string if truncated mid-string
-      const lastQuote = cleaned.lastIndexOf('"')
-      const beforeLastQuote = cleaned.substring(0, lastQuote)
-      const quoteCount = (beforeLastQuote.match(/"/g) || []).length
-
-      if (quoteCount % 2 === 1) {
-        // Odd number of quotes before last quote - we're in a string
-        cleaned += '"'
-      }
-
-      // Add closing braces
-      cleaned += '}'.repeat(missing)
-    }
-  }
-
-  return cleaned
-}
-
-/**
  * Normalize weights to ensure they're between 0 and 1
  */
 function normalizeWeights(weights: DocTypeWeights): DocTypeWeights {
+  const defaults = WEIGHTS.DEFAULT_DOC_WEIGHTS
   return {
-    knowledge_base: Math.max(0, Math.min(1, weights.knowledge_base || 0.5)),
-    hf_model: Math.max(0, Math.min(1, weights.hf_model || 0.5)),
-    github_repo: Math.max(0, Math.min(1, weights.github_repo || 0.5)),
+    knowledge_base: Math.max(0, Math.min(1, weights.knowledge_base || defaults.knowledge_base)),
+    hf_model: Math.max(0, Math.min(1, weights.hf_model || defaults.hf_model)),
+    github_repo: Math.max(0, Math.min(1, weights.github_repo || defaults.github_repo)),
   }
 }
 

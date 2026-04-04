@@ -9,12 +9,14 @@ import {
   getModelCompetitivePosition,
   getRepoCompetitivePosition,
   getTechStackPatterns,
+  getRagTechStackSankey,
   type LanguageTopicMatrix,
   type TaskAnalysis,
   type TopicAnalysis,
   type ModelCompetitivePosition,
   type RepoCompetitivePosition,
   type TechStackPattern,
+  type RagTechStackSankeyFlow,
 } from "@/lib/market-analysis";
 import {
   getTrendsTimeSeries,
@@ -26,6 +28,7 @@ import { OpportunityAnalysis } from "./components/OpportunityAnalysis";
 import { CompetitivePositionAnalysis } from "./components/CompetitivePositionAnalysis";
 import { LanguageTopicHeatmap } from "./components/LanguageTopicHeatmap";
 import { TechStackPatternsChart } from "./components/TechStackPatternsChart";
+import { RagTechStackSankey } from "./components/RagTechStackSankey";
 import { EcosystemStats } from "@/app/components/EcosystemStats";
 
 export default function MarketAnalyticsPage() {
@@ -39,6 +42,7 @@ export default function MarketAnalyticsPage() {
     [],
   );
   const [stackPatterns, setStackPatterns] = useState<TechStackPattern[]>([]);
+  const [sankeyFlows, setSankeyFlows] = useState<RagTechStackSankeyFlow[]>([]);
   const [trendsData, setTrendsData] = useState<TrendsTimeSeries[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +61,7 @@ export default function MarketAnalyticsPage() {
           modelPosData,
           repoPosData,
           stackData,
+          sankeyData,
           trendsData,
         ] = await Promise.all([
           getLanguageTopicMatrix(),
@@ -65,6 +70,7 @@ export default function MarketAnalyticsPage() {
           getModelCompetitivePosition(),
           getRepoCompetitivePosition(),
           getTechStackPatterns(),
+          getRagTechStackSankey(),
           getTrendsTimeSeries(),
         ]);
 
@@ -74,6 +80,7 @@ export default function MarketAnalyticsPage() {
         setModelPositions(modelPosData);
         setRepoPositions(repoPosData);
         setStackPatterns(stackData);
+        setSankeyFlows(sankeyData);
         setTrendsData(trendsData);
       } catch (err) {
         console.error("Error loading market analysis:", err);
@@ -172,7 +179,7 @@ export default function MarketAnalyticsPage() {
           {/* Opportunity Analysis */}
           <Section
             title="Opportunity Analysis"
-            subtitle="Multi-dimensional scoring: market size, competition, concentration, success rate"
+            subtitle="Multi-dimensional scoring: market size, competition, concentration, success rate. Bubble size = Market size."
           >
             <OpportunityAnalysis
               tasks={tasks}
@@ -184,13 +191,21 @@ export default function MarketAnalyticsPage() {
           {/* Competitive Position Analysis */}
           <Section
             title="Competitive Position Map"
-            subtitle="Repos: Age since creation (X) vs Stars (Y). Models: Days since update (X) vs Downloads (Y). Bubble = engagement. Top 30 per category."
+            subtitle="Repos by age vs stars (bubble = engagement). Toggle to see models by recency vs downloads."
           >
             <CompetitivePositionAnalysis
               modelPositions={modelPositions}
               repoPositions={repoPositions}
               isTouchDevice={isTouchDevice}
             />
+          </Section>
+
+          {/* RAG Tech Stack Sankey */}
+          <Section
+            title="RAG Ecosystem Overview"
+            subtitle="Explore GitHub repositories and HuggingFace models categorized by RAG use cases"
+          >
+            <RagTechStackSankey flows={sankeyFlows} />
           </Section>
 
           {/* Language × Topic Matrix */}

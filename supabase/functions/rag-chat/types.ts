@@ -20,16 +20,10 @@ export interface DataSourceQuery {
   source: DataSourceType
   params?: {
     query?: string
-    model_names?: string[]
-    repo_names?: string[]
     authors?: string[]
     owners?: string[]
     categories?: string[]
     limit?: number
-    weights?: {
-      docs: number
-      structured: number
-    }
   }
 }
 
@@ -82,10 +76,6 @@ export interface SearchResult {
 
   // Metadata tracking
   snapshot_date?: string
-}
-
-export interface DataSourceResults {
-  [key: string]: SearchResult[]
 }
 
 /**

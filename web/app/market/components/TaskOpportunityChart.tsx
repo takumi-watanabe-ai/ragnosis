@@ -166,9 +166,6 @@ export function TaskOpportunityChart({
               </span>
               : Low competition + Low success = Emerging/Niche
             </div>
-            <div className="pt-1">
-              • Bubble size = Market size (total downloads)
-            </div>
           </div>
         </div>
       </div>

@@ -7,10 +7,22 @@ interface LanguageTopicHeatmapProps {
   langMatrix: LanguageTopicMatrix[];
 }
 
+interface TooltipData {
+  language: string;
+  topic: string;
+  repoCount: number;
+  totalStars: number;
+  percentage: number;
+  rank: number;
+  x: number;
+  y: number;
+}
+
 export function LanguageTopicHeatmap({
   langMatrix,
 }: LanguageTopicHeatmapProps) {
   const [boxWidth, setBoxWidth] = useState(140);
+  const [tooltip, setTooltip] = useState<TooltipData | null>(null);
 
   useEffect(() => {
     function updateWidth() {
@@ -37,7 +49,7 @@ export function LanguageTopicHeatmap({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto relative">
       <div className="min-w-max">
         {data.map((lang) => {
           // Calculate max count for this language to normalize opacity (excluding zeros)
@@ -45,6 +57,7 @@ export function LanguageTopicHeatmap({
             ...lang.topics.map((t) => t.count).filter((c) => c > 0),
             1,
           );
+          const totalRepos = lang.topics.reduce((sum, t) => sum + t.count, 0);
 
           return (
             <div key={lang.language} className="mb-2">
@@ -59,14 +72,39 @@ export function LanguageTopicHeatmap({
                       ? 0.05
                       : 0.3 + (topic.count / maxCount) * 0.5;
 
+                  const percentage =
+                    totalRepos > 0 ? (topic.count / totalRepos) * 100 : 0;
+
+                  // Calculate actual rank within this language
+                  const sortedTopics = [...lang.topics]
+                    .filter((t) => t.count > 0)
+                    .sort((a, b) => b.count - a.count);
+                  const actualRank =
+                    sortedTopics.findIndex((t) => t.name === topic.name) + 1;
+
                   return (
                     <div
                       key={topic.name}
-                      className="p-3 border border-stone-border text-center flex-shrink-0"
+                      className="p-3 border border-stone-border text-center flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                       style={{
                         width: `${boxWidth}px`,
                         backgroundColor: `rgba(34, 34, 34, ${normalizedIntensity})`,
                       }}
+                      onMouseEnter={(e) => {
+                        if (topic.count > 0) {
+                          setTooltip({
+                            language: lang.language,
+                            topic: topic.name,
+                            repoCount: topic.count,
+                            totalStars: topic.stars,
+                            percentage,
+                            rank: actualRank,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
                     >
                       <div
                         className="text-xs uppercase tracking-wide"
@@ -98,6 +136,40 @@ export function LanguageTopicHeatmap({
           );
         })}
       </div>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 bg-white border border-stone-border shadow-lg p-3 text-xs max-w-xs"
+          style={{
+            left: `${tooltip.x + 10}px`,
+            top: `${tooltip.y + 10}px`,
+            pointerEvents: "none",
+          }}
+        >
+          <div className="font-medium text-charcoal mb-2">
+            {tooltip.topic} ({tooltip.language})
+          </div>
+          <div className="space-y-1 text-stone">
+            <div>
+              <span className="font-medium text-charcoal">Repositories:</span>{" "}
+              {tooltip.repoCount.toLocaleString()}
+            </div>
+            <div>
+              <span className="font-medium text-charcoal">Total Stars:</span>{" "}
+              {tooltip.totalStars.toLocaleString()}
+            </div>
+            <div>
+              <span className="font-medium text-charcoal">Share:</span>{" "}
+              {tooltip.percentage.toFixed(1)}% of {tooltip.language} repos
+            </div>
+            <div>
+              <span className="font-medium text-charcoal">Rank:</span> #
+              {tooltip.rank} topic for {tooltip.language}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -201,6 +273,7 @@ function prepareLangTopicHeatmap(matrix: LanguageTopicMatrix[]) {
       return {
         name: topic,
         count: entry?.repo_count || 0,
+        stars: entry?.total_stars || 0,
       };
     });
 

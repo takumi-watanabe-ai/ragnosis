@@ -146,9 +146,6 @@ export function TopicOpportunityChart({
               </span>
               : Low competition + Low success = Emerging/Niche
             </div>
-            <div className="pt-1">
-              • Bubble size = Market size (total stars)
-            </div>
           </div>
         </div>
       </div>

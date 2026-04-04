@@ -14,6 +14,8 @@ import { executeDataSource } from "./data-sources.ts";
 import { generateAnswer } from "./answer-generator.ts";
 import { evaluateAnswer } from "./answer-evaluator.ts";
 import type { SearchResult } from "./types.ts";
+import { RESPONSE_MESSAGES, SEPARATOR, LOG_PREFIX } from "./utils/constants.ts";
+import { cleanPartSuffix } from "./utils/formatters.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": config.cors.allowOrigin,
@@ -35,15 +37,15 @@ serve(async (req) => {
     const { query, top_k = 5 } = await req.json();
 
     if (!query) {
-      return new Response(JSON.stringify({ error: "Query is required" }), {
+      return new Response(JSON.stringify({ error: RESPONSE_MESSAGES.NO_QUERY }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`\n${"=".repeat(60)}`);
-    console.log(`📥 Query: "${query}"`);
-    console.log(`${"=".repeat(60)}`);
+    console.log(`\n${SEPARATOR.SECTION}`);
+    console.log(`${LOG_PREFIX.QUERY} Query: "${query}"`);
+    console.log(`${SEPARATOR.SECTION}`);
 
     // Step 1: Plan (1 LLM call)
     const plan = await createQueryPlan(query, top_k, supabase);
@@ -61,11 +63,11 @@ serve(async (req) => {
 
     // Step 2: Execute (no LLM - parallel data fetching)
     console.log(
-      `⚡ Executing ${plan.data_sources.length} data source(s) in parallel...`,
+      `${LOG_PREFIX.EXECUTE} Executing ${plan.data_sources.length} data source(s) in parallel...`,
     );
 
     const allResults = await Promise.all(
-      plan.data_sources.map((ds) => executeDataSource(ds)),
+      plan.data_sources.map((ds) => executeDataSource(ds, supabase)),
     );
 
     // Flatten and limit to top_k (when multiple sources are used)
@@ -73,14 +75,13 @@ serve(async (req) => {
     const results: SearchResult[] = allFlattened.slice(0, top_k);
 
     console.log(
-      `✅ Retrieved ${allFlattened.length} results, returning top ${results.length}`,
+      `${LOG_PREFIX.SUCCESS} Retrieved ${allFlattened.length} results, returning top ${results.length}`,
     );
 
     if (results.length === 0) {
       return new Response(
         JSON.stringify({
-          answer:
-            "No relevant sources found for your query. Try rephrasing or broadening your question.",
+          answer: RESPONSE_MESSAGES.NO_RESULTS,
           sources: [],
           metadata: { intent: plan.intent },
         }),
@@ -89,25 +90,18 @@ serve(async (req) => {
     }
 
     // Step 3: Synthesize answer
-    const answer = await generateAnswer(query, results, plan.intent);
+    const answer = await generateAnswer(query, results, plan.intent, supabase);
 
-    // Step 4: Evaluate answer quality (for monitoring only)
+    // Step 4: Evaluate answer quality (fast heuristics, no LLM call)
     const evaluation = await evaluateAnswer(query, answer, results.length);
     console.log(
-      `📊 Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`,
+      `${LOG_PREFIX.METRICS} Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`,
     );
-
-    if (evaluation.issues && evaluation.issues.length > 0) {
-      console.log(`📊 Answer issues: ${evaluation.issues.join(', ')}`);
-    } else {
-      console.log(`📊 Answer issues: None - answer meets quality standards`);
-    }
+    console.log(`${LOG_PREFIX.METRICS} Issues: ${evaluation.issues.join(', ')}`);
 
     // Format sources for response
     const sources = results.map((r, i) => {
-      const cleanName = r.name
-        .replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, "")
-        .trim();
+      const cleanName = cleanPartSuffix(r.name);
       return {
         position: i + 1,
         name: cleanName,
@@ -125,8 +119,8 @@ serve(async (req) => {
       };
     });
 
-    console.log(`✅ Answer generated successfully`);
-    console.log(`${"=".repeat(60)}\n`);
+    console.log(`${LOG_PREFIX.SUCCESS} Answer generated successfully`);
+    console.log(`${SEPARATOR.SECTION}\n`);
 
     return new Response(
       JSON.stringify({
@@ -140,7 +134,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error(`${LOG_PREFIX.ERROR} Error:`, error);
 
     return new Response(
       JSON.stringify({

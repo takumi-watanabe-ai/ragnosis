@@ -39,11 +39,6 @@ export const config = {
     // Final results to return (regardless of limit param)
     finalResultCount: 20,     // Return top 20 after RRF fusion
 
-    // Boost for structured data (models/repos)
-    // With full READMEs, content is balanced but structured data needs edge to compete
-    // No boost - let content quality determine ranking
-    structuredDataBoost: 1.0,
-
     // Context sizing (token-optimized)
     context: {
       primaryExcerpt: 400,     // Top 2 sources get full context
@@ -57,7 +52,6 @@ export const config = {
 
       // Cross-encoder config (uses gte-small for query+doc embedding)
       crossEncoder: {
-        topN: 20,              // Number of results after reranking
         maxChars: 500,         // Max chars from doc for cross-encoding
       },
 
@@ -75,24 +69,26 @@ export const config = {
     finalResultCount: 20,     // Rerank to top 20 based on query relevance
   },
 
-  // Feature flags for experimental RAG improvements
+  // Feature flags - DEFAULT VALUES ONLY (fallback when DB unavailable)
+  // Actual flags are stored in database (see services/feature-flags.ts)
+  // These defaults match the initial values in the migration
   features: {
     // LLM Query Planner - weighted multi-source search with doc_type weights
     // When enabled: LLM extracts intent and applies weights to boost relevant doc types
     // When disabled: Simple hybrid search across all doc types (no weights)
     queryPlanner: {
-      enabled: false,           // ON - uses LLM to guide search with doc_type weights
+      enabled: false,           // Default: OFF
     },
 
     // Query expansion - generate semantic variations to improve recall
     queryExpansion: {
-      enabled: false,          // OFF by default
+      enabled: false,          // Default: OFF
       maxVariations: 2,        // Number of query variations to generate
     },
 
     // Answer verification - validate answer claims against sources
     answerVerification: {
-      enabled: false,          // OFF by default
+      enabled: false,          // Default: OFF
       minFaithfulness: 0.7,    // Minimum faithfulness threshold
     },
   },

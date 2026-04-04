@@ -427,7 +427,7 @@ BEGIN
     END as market_share
   FROM top_per_category tpc
   CROSS JOIN total_stars t
-  WHERE tpc.cat_rank <= 30  -- Top 30 per category
+  WHERE tpc.cat_rank <= 5  -- Top 5 per category
   ORDER BY tpc.stars DESC;
 END;
 $$ LANGUAGE plpgsql;
