@@ -1,0 +1,102 @@
+# Curated URL lists for RAG content (non-sitemap sources)
+
+awesome_rag_high_priority:
+  name: "Awesome-RAG High Priority Docs"
+  source_id: "awesome-rag-docs"
+  enabled: true
+  priority: 1
+  urls:
+    # Framework documentation
+    - "https://docs.haystack.deepset.ai/docs/retrieval-augmented-generation"
+    - "https://docs.llamaindex.ai/en/stable/module_guides/storing/vector_stores/"
+    - "https://docs.llamaindex.ai/en/stable/optimizing/production_rag/"
+    - "https://docs.llamaindex.ai/en/stable/getting_started/starter_example/"
+    - "https://docs.llamaindex.ai/en/stable/api_reference/node_parsers/sentence_splitter/"
+    - "https://python.langchain.com/docs/use_cases/question_answering/"
+    - "https://python.langchain.com/docs/modules/data_connection/"
+    - "https://python.langchain.com/docs/production/"
+    - "https://python.langchain.com/docs/how_to/few_shot_examples/"
+    - "https://python.langchain.com/v0.1/docs/modules/data_connection/document_transformers/character_text_splitter/"
+    - "https://python.langchain.com/v0.1/docs/modules/data_connection/document_transformers/markdown_header_metadata/"
+    - "https://python.langchain.com/v0.1/docs/modules/data_connection/document_transformers/recursive_text_splitter/"
+    - "https://python.langchain.com/v0.1/docs/use_cases/tagging/"
+    - "https://langchain-ai.github.io/langgraph/tutorials/rag/langgraph_agentic_rag/"
+    - "https://docs.langchain.com/langsmith/annotation-queues"
+    - "https://docs.smith.langchain.com/"
+    - "https://docs.ragas.io/en/stable/"
+    - "https://docs.litellm.ai/"
+    - "https://haystack.deepset.ai/cookbook/query-expansion"
+    - "https://huggingface.co/docs/evaluate/en/index"
+    # RAG-specific articles
+    - "https://www.anthropic.com/engineering/contextual-retrieval"
+    - "https://selfrag.github.io/"
+    - "https://weaviate.io/developers/academy/py/vector_index/flat"
+
+awesome_rag_technique_guides:
+  name: "Awesome-RAG Technique Guides"
+  source_id: "awesome-rag-techniques"
+  enabled: true
+  priority: 2
+  urls:
+    - "https://www.promptingguide.ai/techniques/consistency"
+    - "https://www.promptingguide.ai/techniques/cot"
+    - "https://www.promptingguide.ai/techniques/react"
+    - "https://www.promptingguide.ai/techniques/zeroshot"
+
+awesome_rag_tutorials:
+  name: "Awesome-RAG Developer Tutorials"
+  source_id: "awesome-rag-tutorials"
+  enabled: true
+  priority: 3
+  urls:
+    - "https://developer.ibm.com/tutorials/awb-how-to-implement-llm-guardrails-for-rag-applications/"
+    - "https://developer.nvidia.com/blog/an-easy-introduction-to-multimodal-retrieval-augmented-generation/"
+    - "https://developer.nvidia.com/blog/enhancing-rag-pipelines-with-re-ranking/"
+    - "https://hiddenlayer.com/innovation-hub/prompt-injection-attacks-on-llms/"
+    - "https://machinelearningmastery.com/rag-hallucination-detection-techniques/"
+    - "https://techcommunity.microsoft.com/t5/ai-ai-platform-blog/raft-a-new-way-to-teach-llms-to-be-better-at-rag/ba-p/4084674"
+
+awesome_rag_database_docs:
+  name: "Awesome-RAG Database Documentation"
+  source_id: "awesome-rag-databases"
+  enabled: true
+  priority: 4
+  urls:
+    - "https://cassandra.apache.org/doc/latest/cassandra/vector-search/concepts.html"
+    - "https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/"
+    # Removed: Redis (insufficient content - 57 chars, likely JS-heavy)
+    # - "https://redis.io/docs/latest/develop/interact/search-and-query/"
+    - "https://learn.microsoft.com/en-us/azure/cosmos-db/vector-database"
+
+awesome_rag_blog_articles:
+  name: "Awesome-RAG Blog Articles"
+  source_id: "awesome-rag-blogs"
+  enabled: true
+  priority: 5
+  urls:
+    # Removed: All Medium URLs (403 Forbidden - Medium blocks scrapers)
+    # - "https://medium.com/@david.richards.tech/document-chunking-for-rag-ai-applications-04363d48fbf7"
+    # - "https://medium.com/@AbhiramiVS/chunking-methods-all-to-know-about-it-65c10aa7b24e"
+    # - "https://medium.com/@anuragmishra_27746/five-levels-of-chunking-strategies-in-rag-notes-from-gregs-video-7b735895694d"
+    # - "https://medium.com/@ronantech/cache-augmented-generation-cag-in-llms-a-step-by-step-tutorial-6ac35d415eec"
+    # - "https://medium.com/@1kg/prompt-cache-what-is-prompt-caching-a-comprehensive-guide-e6cbae48e6a3"
+    # - "https://medium.com/etoai/better-rag-with-active-retrieval-augmented-generation-flare-3b66646e2a9f"
+    # - "https://medium.com/intel-tech/four-data-cleaning-techniques-to-improve-large-language-model-llm-performance-77bee9003625"
+    # - "https://adam-rida.medium.com/temporal-augmented-retrieval-tar-dynamic-rag-ad737506dfcc"
+    # - "https://sourajit16-02-93.medium.com/chain-of-verification-cove-understanding-implementation-e7338c7f4cb5"
+    - "https://pixion.co/blog/rag-strategies-hierarchical-index-retrieval"
+    - "https://pixion.co/blog/rag-strategies-hypothetical-questions-hyde"
+
+awesome_rag_tools_benchmarks:
+  name: "Awesome-RAG Tools & Benchmarks"
+  source_id: "awesome-rag-tools"
+  enabled: true
+  priority: 6
+  urls:
+    # Removed: MTEB Leaderboard (insufficient content - 10 chars, JS-heavy interactive tool)
+    # - "https://huggingface.co/spaces/mteb/leaderboard"
+    - "https://benchmark.vectorview.ai/vectordbs.html"
+    # Removed: TuringBench (DNS resolution failed - domain doesn't exist)
+    # - "https://turingbench.ist.psu.edu/"
+    # Removed: Weights & Biases (insufficient content - 16 chars, requires login/JS)
+    # - "https://wandb.ai/wandb-japan/rag-hands-on/reports/Step-for-developing-and-evaluating-RAG-application-with-W-B--Vmlldzo1NzU4OTAx"

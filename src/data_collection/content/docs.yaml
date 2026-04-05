@@ -58,46 +58,40 @@ pinecone_learn:
   enabled: true
   priority: 4
 
-huggingface_docs:
-  name: "HuggingFace Documentation"
-  source_id: "huggingface-docs"
-  sitemap_url: "https://huggingface.co/sitemap.xml"
-  url_pattern: "huggingface.co/docs/"
-  exclude_patterns: []
-  enabled: true
-  priority: 5
-  section_patterns:
-    transformers: "/docs/transformers/"
-    datasets: "/docs/datasets/"
-    hub: "/docs/hub/"
-    inference: "/docs/inference-endpoints/"
+# Disabled - Too broad, no RAG keywords in URL paths
+# Use curated URL lists for specific HuggingFace RAG content instead
+# huggingface_docs:
+#   name: "HuggingFace Documentation"
+#   source_id: "huggingface-docs"
+#   sitemap_url: "https://huggingface.co/sitemap.xml"
+#   url_pattern: "huggingface.co/docs/"
+#   exclude_patterns: []
+#   enabled: false
+#   priority: 5
 
-huggingface_learn:
-  name: "HuggingFace Learn"
-  source_id: "huggingface-learn"
-  sitemap_url: "https://huggingface.co/sitemap.xml"
-  url_pattern: "huggingface.co/learn/"
-  exclude_patterns: []
-  enabled: true
-  priority: 6
+# huggingface_learn:
+#   name: "HuggingFace Learn"
+#   source_id: "huggingface-learn"
+#   sitemap_url: "https://huggingface.co/sitemap.xml"
+#   url_pattern: "huggingface.co/learn/"
+#   exclude_patterns: []
+#   enabled: false
+#   priority: 6
 
 weaviate_docs:
   name: "Weaviate Documentation"
   source_id: "weaviate-docs"
-  sitemap_url: "https://weaviate.io/sitemap.xml"
-  url_pattern: "weaviate.io/developers/weaviate"
+  sitemap_url: "https://docs.weaviate.io/sitemap.xml"
+  url_pattern: "docs.weaviate.io/weaviate"
   exclude_patterns:
-    - "/company/"
-    - "/platform/"
-    - "/pricing/"
     - "/changelog"
     - "/release-notes"
   enabled: true
   priority: 7
   section_patterns:
-    concepts: "/developers/weaviate/concepts/"
-    configuration: "/developers/weaviate/config/"
-    api: "/developers/weaviate/api/"
+    concepts: "/weaviate/concepts/"
+    configuration: "/weaviate/config/"
+    api: "/weaviate/api/"
 
 chromadb_docs:
   name: "ChromaDB Documentation"

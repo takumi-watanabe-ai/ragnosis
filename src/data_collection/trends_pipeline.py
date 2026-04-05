@@ -4,16 +4,13 @@ Since time_series contains 12 months of data, daily updates are unnecessary.
 """
 
 import logging
-import os
-from dotenv import load_dotenv
 from supabase import create_client
 
-from trends_fetcher import GoogleTrendsFetcher
+from .trends_fetcher import GoogleTrendsFetcher
+from .config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 
 def main():
@@ -22,12 +19,11 @@ def main():
     logger.info("📈 GOOGLE TRENDS MONTHLY UPDATE")
     logger.info("=" * 60)
 
-    # Get credentials
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-
-    if not supabase_url or not supabase_key:
-        logger.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
+    # Get credentials from centralized config
+    try:
+        supabase_url, supabase_key = config.get_supabase_credentials()
+    except ValueError as e:
+        logger.error(f"❌ Configuration error: {e}")
         return
 
     supabase = create_client(supabase_url, supabase_key)

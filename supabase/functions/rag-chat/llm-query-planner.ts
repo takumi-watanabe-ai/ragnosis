@@ -99,7 +99,7 @@ Available model tasks: ${availableTasks.join(', ')}
 Your job:
 1. Understand the PRIMARY INTENT
 2. Assign WEIGHTS (0.0-1.0) to each doc_type based on relevance
-3. Extract KEY NOUNS/ENTITIES for BM25 boosting (3-5 important terms)
+3. Extract KEY NOUNS/ENTITIES for BM25 boosting (ONLY from the actual query - do NOT add related terms)
 4. Optionally expand the query for better search
 
 Intent types:
@@ -115,14 +115,16 @@ Doc types:
 - "github_repo": GitHub repositories (frameworks, tools, libraries)
 
 Weight guidelines:
-- "How does RAG work?" → knowledge_base: 1.0, hf_model: 0.2, github_repo: 0.3
-- "best embedding models" → knowledge_base: 0.6, hf_model: 1.0, github_repo: 0.3
-- "chromadb vs pinecone" → knowledge_base: 0.8, hf_model: 0.1, github_repo: 0.4
-- "how to build RAG" → knowledge_base: 0.9, hf_model: 0.4, github_repo: 0.7
+- Conceptual questions (how/what/why): Prioritize knowledge_base
+- Model/tool search queries: Prioritize hf_model and/or github_repo
+- Comparison questions: Balance knowledge_base with relevant tool types
+- Implementation questions: Balance knowledge_base with code repositories
 
 **IMPORTANT**:
 - Always search ALL doc types. Weights determine relevance, not exclusion.
-- Extract 3-5 key nouns/entities that are most important for matching (e.g., ["RAG", "embeddings", "ChromaDB"])
+- Extract nouns/entities ONLY from the actual query text - do not infer or add related concepts.
+- If the query contains just one key term, return just that one term.
+- Nouns should be actual words or phrases that appear in the query, not conceptually related terms.
 - Keep response concise - only fill optional fields if clearly relevant.
 
 Respond with VALID JSON only (no trailing text):

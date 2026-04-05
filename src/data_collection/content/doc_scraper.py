@@ -1,86 +1,28 @@
 """Documentation scraper - fetches content from official documentation sites."""
 
-import hashlib
 import logging
-import re
-import requests
 import xml.etree.ElementTree as ET
 import yaml
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
-from bs4 import BeautifulSoup
+from typing import List
 
-from rag_classifier import RAGContentClassifier
+from .base_scraper import BaseScraper, DocPage
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class DocPage:
-    """Represents a documentation page."""
-
-    url: str
-    title: str
-    content: str
-    source: str  # e.g., "langchain-docs", "llamaindex-docs"
-    scrape_method: str  # "sitemap"
-
-    # Optional fields
-    updated_at: Optional[datetime] = None
-    excerpt: Optional[str] = None
-    section: Optional[str] = None  # e.g., "guides", "api-reference"
-    rag_categories: Optional[List[str]] = None  # RAG taxonomy categories
-
-    @property
-    def id(self) -> str:
-        """Generate unique ID from URL hash."""
-        return hashlib.sha256(self.url.encode()).hexdigest()[:16]
-
-    def to_db_row(self) -> dict:
-        """Convert to database row format for knowledge_base table."""
-        return {
-            "id": self.id,
-            "url": self.url,
-            "title": self.title,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "content": self.content,
-            "excerpt": self.excerpt,
-            "source": self.source,
-            "section": self.section,
-            "scrape_method": self.scrape_method,
-        }
-
-
-class DocScraper:
+class DocScraper(BaseScraper):
     """Scrapes documentation pages from XML sitemaps."""
 
     def __init__(self, existing_urls=None):
-        """Initialize scraper."""
-        # Load configs from content directory
-        content_dir = Path(__file__).parent
+        """Initialize sitemap-based scraper."""
+        super().__init__(existing_urls=existing_urls)
 
+        # Load sitemap configs from content directory
+        content_dir = Path(__file__).parent
         with open(content_dir / "docs.yaml") as f:
             self.docs_config = yaml.safe_load(f)
-
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "RAGnosis/1.0 (RAG Market Intelligence)"
-        })
-        self.existing_urls = existing_urls or set()
-
-        # Initialize RAG content classifier
-        self.rag_classifier = RAGContentClassifier(min_matches=2, api_min_matches=3)
-
-        # Stats tracking
-        self.stats = {
-            "urls_found": 0,
-            "urls_filtered_out": 0,
-            "pages_fetched": 0,
-            "pages_rejected_no_rag": 0,
-            "pages_accepted": 0,
-        }
 
     def scrape_site(self, site_config: dict, max_pages: int = None) -> List[DocPage]:
         """Scrape documentation pages from sitemap."""
@@ -92,6 +34,9 @@ class DocScraper:
             return []
 
         logger.info(f"📚 Fetching: {site_config['name']}")
+
+        # Add scrape_method to config for _fetch_page
+        site_config = {**site_config, "scrape_method": "sitemap"}
 
         try:
             page_entries = self._fetch_urls_from_sitemap(sitemap_url, site_config)
@@ -105,47 +50,46 @@ class DocScraper:
             if max_pages:
                 page_entries = page_entries[:max_pages]
 
+            # Track stats for this site
+            existing_count = 0
+            failed_count = 0
+            filtered_count = 0
+            
             pages = []
             for i, (url, sitemap_date) in enumerate(page_entries, 1):
                 try:
                     if url in self.existing_urls:
+                        existing_count += 1
+                        logger.debug(f"   [{i}/{len(page_entries)}] ⏭️  Already exists: {url}")
                         continue
 
                     page = self._fetch_page(url, source, sitemap_date, site_config)
                     if page:
                         pages.append(page)
                         logger.info(f"   [{i}/{len(page_entries)}] ✅ {page.title[:60]}")
+                    else:
+                        filtered_count += 1
+                        # Filtering reason already logged in _fetch_page
                 except Exception as e:
-                    logger.warning(f"   [{i}/{len(page_entries)}] ⚠️  Failed: {url}")
+                    failed_count += 1
+                    logger.warning(f"   [{i}/{len(page_entries)}] ⚠️  Failed: {url} - {e}")
                     continue
 
-            logger.info(f"   ✅ Scraped {len(pages)} RAG-relevant pages")
+            # Summary
+            logger.info(f"   ✅ Scraped {len(pages)} new pages")
+            if existing_count > 0:
+                logger.info(f"   ⏭️  Skipped {existing_count} existing pages")
+            if filtered_count > 0:
+                logger.info(f"   🔍 Filtered {filtered_count} pages (see details above)")
+            if failed_count > 0:
+                logger.warning(f"   ⚠️  Failed to fetch {failed_count} pages")
+                
             return pages
 
         except Exception as e:
             logger.error(f"   ❌ Sitemap error: {e}")
             return []
 
-    def log_stats(self):
-        """Log filtering statistics."""
-        logger.info("\n" + "=" * 60)
-        logger.info("📊 RAG FILTERING STATISTICS")
-        logger.info("=" * 60)
-        logger.info(f"   URLs found in sitemaps: {self.stats['urls_found']}")
-        logger.info(f"   URLs filtered out (non-RAG): {self.stats['urls_filtered_out']}")
-        logger.info(f"   Pages fetched: {self.stats['pages_fetched']}")
-        logger.info(f"   Pages rejected (no RAG categories): {self.stats['pages_rejected_no_rag']}")
-        logger.info(f"   Pages accepted (RAG-relevant): {self.stats['pages_accepted']}")
-
-        if self.stats['urls_found'] > 0:
-            url_filter_rate = (self.stats['urls_filtered_out'] / self.stats['urls_found']) * 100
-            logger.info(f"   URL filter rate: {url_filter_rate:.1f}%")
-
-        if self.stats['pages_fetched'] > 0:
-            page_filter_rate = (self.stats['pages_rejected_no_rag'] / self.stats['pages_fetched']) * 100
-            logger.info(f"   Page filter rate: {page_filter_rate:.1f}%")
-
-        logger.info("=" * 60 + "\n")
 
     def _fetch_urls_from_sitemap(self, sitemap_url: str, site_config: dict) -> List[tuple]:
         """Fetch URLs with dates from sitemap XML."""
@@ -226,163 +170,3 @@ class DocScraper:
             logger.error(f"   ❌ Sitemap fetch failed: {e}")
             return []
 
-    def _fetch_page(self, url: str, source: str, sitemap_date: datetime = None,
-                    site_config: dict = None) -> Optional[DocPage]:
-        """Fetch and parse documentation page."""
-        try:
-            self.stats["pages_fetched"] += 1
-
-            response = self.session.get(url, timeout=15)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.content, "html.parser")
-
-            # Extract title
-            title = self._extract_title(soup)
-            if not title:
-                return None
-
-            # Extract content
-            content = self._extract_content(soup, site_config)
-            if not content or len(content.strip()) < 100:
-                return None
-
-            # Classify content for RAG relevance
-            classification = self.rag_classifier.classify_content(
-                title=title,
-                content=content,
-                url=url
-            )
-
-            # Reject if not RAG-relevant
-            if not classification["is_rag"]:
-                self.stats["pages_rejected_no_rag"] += 1
-                logger.debug(f"   Rejected (no RAG): {url}")
-                return None
-
-            # Extract metadata
-            updated_at = self._extract_date(soup) or sitemap_date
-            excerpt = content[:300] if len(content) > 300 else content
-            section = self._extract_section(url, site_config)
-
-            self.stats["pages_accepted"] += 1
-
-            return DocPage(
-                url=url,
-                title=self._clean_text(title),
-                content=self._clean_text(content),
-                source=source,
-                scrape_method="sitemap",
-                updated_at=updated_at,
-                excerpt=self._clean_text(excerpt),
-                section=section,
-                rag_categories=classification["categories"],
-            )
-
-        except Exception:
-            return None
-
-    def _clean_text(self, text: str) -> str:
-        """Clean and normalize text."""
-        if not text:
-            return ""
-        text = re.sub(r"\s+", " ", text)
-        text = text.replace("&nbsp;", " ").replace("&amp;", "&")
-        return text.strip()
-
-    def _extract_title(self, soup: BeautifulSoup) -> str:
-        """Extract title."""
-        # Try og:title meta tag
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            return og_title["content"]
-
-        # Try h1
-        h1 = soup.find("h1")
-        if h1:
-            return h1.get_text()
-
-        # Try title tag
-        title_tag = soup.find("title")
-        if title_tag:
-            return title_tag.get_text()
-
-        return ""
-
-    def _extract_content(self, soup: BeautifulSoup, site_config: dict = None) -> str:
-        """Extract documentation content."""
-        # Remove unwanted elements
-        for unwanted in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            unwanted.decompose()
-
-        # Try to find main content area (documentation-specific selectors)
-        content_selectors = [
-            "article",
-            "main",
-            "[role='main']",
-            ".markdown",
-            ".documentation",
-            ".doc-content",
-            ".content",
-        ]
-
-        content_elem = None
-        for selector in content_selectors:
-            if selector.startswith("."):
-                content_elem = soup.find(class_=lambda x: x and selector[1:] in str(x).lower())
-            elif selector.startswith("["):
-                # Simple attribute selector
-                content_elem = soup.find(attrs={"role": "main"})
-            else:
-                content_elem = soup.find(selector)
-
-            if content_elem:
-                break
-
-        if content_elem:
-            content = content_elem.get_text(separator="\n", strip=True)
-        else:
-            content = soup.get_text(separator="\n", strip=True)
-
-        lines = (line.strip() for line in content.splitlines())
-        return "\n".join(line for line in lines if line)
-
-    def _extract_date(self, soup: BeautifulSoup) -> Optional[datetime]:
-        """Extract updated date."""
-        date_meta = (
-            soup.find("meta", property="article:modified_time")
-            or soup.find("meta", property="article:published_time")
-            or soup.find("meta", {"name": "last-modified"})
-            or soup.find("time")
-        )
-
-        if date_meta:
-            date_str = date_meta.get("content") or date_meta.get("datetime")
-            if date_str:
-                try:
-                    return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                except ValueError:
-                    pass
-
-        return None
-
-    def _extract_section(self, url: str, site_config: dict = None) -> Optional[str]:
-        """Extract documentation section from URL."""
-        if not site_config:
-            return None
-
-        # Try to extract section from URL path
-        # e.g., "/docs/guides/..." -> "guides"
-        section_patterns = site_config.get("section_patterns", {})
-        for section, pattern in section_patterns.items():
-            if pattern in url:
-                return section
-
-        # Fallback: extract first path segment after docs
-        parts = url.split("/")
-        if "docs" in parts:
-            idx = parts.index("docs")
-            if idx + 1 < len(parts):
-                return parts[idx + 1]
-
-        return None

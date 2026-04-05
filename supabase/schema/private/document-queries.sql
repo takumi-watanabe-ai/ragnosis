@@ -4,6 +4,26 @@
 -- ============================================================================
 
 -- ============================================================================
+-- UTILITY FUNCTIONS
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION private.filter_new_urls(urls_to_check TEXT[])
+RETURNS TEXT[]
+LANGUAGE sql
+STABLE
+AS $$
+    -- Return only URLs from input array that don't exist in documents table
+    -- Uses EXCEPT for efficient set difference operation
+    SELECT ARRAY(
+        SELECT unnest(urls_to_check)
+        EXCEPT
+        SELECT DISTINCT url
+        FROM documents
+        WHERE url = ANY(urls_to_check)
+    );
+$$;
+
+-- ============================================================================
 -- 1. RANKING - Top models by downloads (with optional filters)
 -- ============================================================================
 

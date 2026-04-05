@@ -3,16 +3,14 @@ Documentation scraping pipeline - scrapes official RAG documentation sites.
 """
 
 import logging
-import os
-from dotenv import load_dotenv
 from supabase import create_client
 
-from doc_scraper import DocScraper
+from .doc_scraper import DocScraper
+from .url_list_scraper import URLListScraper
+from ..config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 
 def main():
@@ -21,12 +19,11 @@ def main():
     logger.info("📚 DOCUMENTATION SCRAPING")
     logger.info("=" * 60)
 
-    # Get credentials
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-
-    if not supabase_url or not supabase_key:
-        logger.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
+    # Get credentials from centralized config
+    try:
+        supabase_url, supabase_key = config.get_supabase_credentials()
+    except ValueError as e:
+        logger.error(f"❌ Configuration error: {e}")
         return
 
     supabase = create_client(supabase_url, supabase_key)
@@ -41,29 +38,58 @@ def main():
         logger.warning(f"   ⚠️  Failed to fetch existing URLs: {e}")
         existing_urls = set()
 
-    # Initialize scraper
-    scraper = DocScraper(existing_urls=existing_urls)
+    # Initialize scrapers
+    sitemap_scraper = DocScraper(existing_urls=existing_urls)
+    url_list_scraper = URLListScraper(existing_urls=existing_urls)
 
-    # Scrape all enabled sites
+    # Scrape both sitemaps and URL lists
     all_pages = []
-    total_sites = len([s for s in scraper.docs_config.values() if s.get("enabled")])
+    max_pages = 200  # Limit pages per source
 
-    logger.info(f"\n📥 Scraping {total_sites} documentation sites...")
+    # Scrape sitemap-based sources
+    sitemap_sources = sitemap_scraper.docs_config
+    total_sitemap_sites = len([s for s in sitemap_sources.values() if s.get("enabled")])
 
-    for site_id, site_config in scraper.docs_config.items():
-        if not site_config.get("enabled"):
-            continue
+    if total_sitemap_sites > 0:
+        logger.info(f"\n📥 Scraping {total_sitemap_sites} sitemap-based documentation sites...")
 
-        try:
-            # Limit pages per site to avoid overwhelming the system
-            pages = scraper.scrape_site(site_config, max_pages=200)
-            all_pages.extend(pages)
-        except Exception as e:
-            logger.error(f"   ❌ Failed to scrape {site_id}: {e}")
-            continue
+        for site_id, site_config in sitemap_sources.items():
+            if not site_config.get("enabled"):
+                continue
 
-    # Log filtering statistics
-    scraper.log_stats()
+            try:
+                pages = sitemap_scraper.scrape_site(site_config, max_pages=max_pages)
+                all_pages.extend(pages)
+            except Exception as e:
+                logger.error(f"   ❌ Failed to scrape {site_id}: {e}")
+                continue
+
+    # Scrape URL list sources
+    url_list_sources = url_list_scraper.url_lists_config
+    total_url_lists = len([l for l in url_list_sources.values() if l.get("enabled")])
+
+    if total_url_lists > 0:
+        logger.info(f"\n📥 Scraping {total_url_lists} curated URL lists...")
+
+        for list_id, list_config in url_list_sources.items():
+            if not list_config.get("enabled"):
+                continue
+
+            try:
+                pages = url_list_scraper.scrape_url_list(list_config, max_pages=max_pages)
+                all_pages.extend(pages)
+            except Exception as e:
+                logger.error(f"   ❌ Failed to scrape {list_id}: {e}")
+                continue
+
+    # Log combined filtering statistics
+    logger.info("\n" + "=" * 60)
+    logger.info("📊 COMBINED SCRAPING STATISTICS")
+    logger.info("=" * 60)
+    logger.info("Sitemap Sources:")
+    sitemap_scraper.log_stats()
+    logger.info("URL Lists:")
+    url_list_scraper.log_stats()
 
     # Insert pages
     if all_pages:

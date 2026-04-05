@@ -1,4 +1,4 @@
-.PHONY: help setup chat web scrape-sitemap embed pipeline env-prod env-local env-status eval-quick eval-full eval eval-range
+.PHONY: help setup chat web scrape-docs scrape-trends embed pipeline env-prod env-local env-status eval-quick eval-full eval eval-range
 
 help: ## Show available commands
 	@echo "RAGnosis - Simple Development Commands"
@@ -40,33 +40,33 @@ web: ## Run Next.js web app (starts edge functions + modern React UI)
 	@echo "Starting Next.js dev server..."
 	@cd web && npm run dev; kill `cat ../.edge-function.pid` 2>/dev/null || true; rm -f ../.edge-function.pid
 
-scrape-docs: ## Scrape documentation pages from sitemaps
-	@echo "📚 Scraping documentation pages from sitemaps..."
+scrape-docs: ## Scrape documentation pages
+	@echo "📚 Scraping documentation pages..."
 	@echo ""
-	cd src/data_collection/content && python doc_pipeline.py
+	python -m src.data_collection.content.doc_pipeline
 	@echo ""
 	@echo "✅ Documentation scraping complete!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"
 
-scrape-trends: ## Scrape Google Trends data (monthly update)
+scrape-trends: ## Scrape Google Trends data
 	@echo "📈 Scraping Google Trends data..."
 	@echo ""
-	python src/data_collection/trends_pipeline.py
+	python -m src.data_collection.trends_pipeline
 	@echo ""
 	@echo "✅ Google Trends scraping complete!"
 
-embed: ## Create vector embeddings for all new data
+embed: ## Create vector embeddings
 	@echo "🧮 Creating vector embeddings..."
 	@echo "📦 Loading sentence-transformer model (takes ~30 seconds)..."
 	@echo ""
-	python src/data_collection/vector_embedder.py
+	python -m src.data_collection.embeddings.pipeline
 	@echo ""
 	@echo "✅ Embeddings complete!"
 
-pipeline: ## Fetch market data (HF/GitHub) - run 'make embed' after
+pipeline: ## Fetch market data (HuggingFace + GitHub)
 	@echo "🚀 Fetching market data (HuggingFace + GitHub)..."
 	@echo ""
-	python src/data_collection/pipeline.py
+	python -m src.data_collection.pipeline
 	@echo ""
 	@echo "✅ Market data collected!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from huggingface_hub import HfApi
 
-from rag_taxonomy import RAG_TAXONOMY
+from .rag_taxonomy import RAG_TAXONOMY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

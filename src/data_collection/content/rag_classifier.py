@@ -2,12 +2,8 @@
 
 import re
 from typing import List, Tuple, Set
-from pathlib import Path
-import sys
 
-# Add parent directory to path to import rag_taxonomy
-sys.path.append(str(Path(__file__).parent.parent))
-from rag_taxonomy import RAG_TAXONOMY
+from ..rag_taxonomy import RAG_TAXONOMY
 
 
 class RAGContentClassifier:
@@ -27,19 +23,34 @@ class RAGContentClassifier:
 
     # Explicit RAG keywords that must appear in URL path or content
     EXPLICIT_RAG_KEYWORDS = {
+        # Core RAG terms
         "rag", "retrieval", "embedding", "embeddings", "vector", "rerank",
         "reranking", "semantic-search", "similarity-search", "vector-database",
         "vector-search", "bm25", "hybrid-search", "colbert", "cross-encoder",
         "dense-retrieval", "document-retrieval", "query-understanding",
-        "index", "indexing", "chunking", "semantic", "pgvector"
+        "index", "indexing", "chunking", "semantic", "pgvector",
+        # Document processing
+        "chunk", "chunks", "splitting", "splitter", "document-processing",
+        # Prompting techniques
+        "prompt", "prompting", "cot", "chain-of-thought", "react", "few-shot",
+        "zero-shot", "self-consistency",
+        # LLM/AI terms
+        "llm", "llms", "language-model", "language-models",
+        # Evaluation & quality
+        "evaluation", "eval", "metrics", "benchmark", "guardrails",
+        "hallucination", "hallucinations",
+        # Storage & databases
+        "database", "storage", "query-expansion",
+        # General AI (more permissive for curated sources)
+        "ai-applications", "ml-applications"
     }
 
-    def __init__(self, min_matches: int = 2, api_min_matches: int = 3):
+    def __init__(self, min_matches: int = 1, api_min_matches: int = 2):
         """Initialize classifier.
 
         Args:
-            min_matches: Minimum keyword matches required for regular pages
-            api_min_matches: Minimum keyword matches required for API reference pages
+            min_matches: Minimum keyword matches required for regular pages (default: 1)
+            api_min_matches: Minimum keyword matches required for API reference pages (default: 2)
         """
         self.min_matches = min_matches
         self.api_min_matches = api_min_matches
@@ -152,11 +163,11 @@ class RAGContentClassifier:
     ) -> dict:
         """Extract RAG categories from page content.
 
-        Uses strict filtering: requires explicit RAG keywords in content.
+        Uses filtering based on RAG keywords and category matches.
 
         Args:
             title: Page title
-            content: First 1000 characters of page content
+            content: Page content (first 2000 characters analyzed)
             url: Optional URL for API reference detection
 
         Returns:
@@ -164,11 +175,13 @@ class RAGContentClassifier:
                 "is_rag": bool,
                 "categories": List[str],
                 "matched_keywords": List[str],
-                "confidence": float
+                "confidence": float,
+                "is_api_ref": bool,
+                "threshold_used": int
             }
         """
-        # Combine title (high weight) and content
-        text = f"{title} {title} {content[:1000]}".lower()
+        # Combine title (high weight) and content (analyze more content for better matching)
+        text = f"{title} {title} {content[:2000]}".lower()
 
         # First check: Must contain explicit RAG keyword
         has_explicit_keyword = any(kw in text for kw in self.EXPLICIT_RAG_KEYWORDS)
@@ -179,7 +192,8 @@ class RAGContentClassifier:
                 "matched_keywords": [],
                 "confidence": 0.0,
                 "is_api_ref": False,
-                "threshold_used": self.min_matches
+                "threshold_used": self.min_matches,
+                "reason": "no_explicit_keywords"
             }
 
         # Track matches using all categories for content classification
@@ -215,7 +229,8 @@ class RAGContentClassifier:
             "matched_keywords": list(set(matched_keywords)),
             "confidence": confidence,
             "is_api_ref": is_api_ref,
-            "threshold_used": min_required
+            "threshold_used": min_required,
+            "reason": "passed" if is_rag else f"insufficient_categories_{len(matched_categories)}_of_{min_required}"
         }
 
     def is_educational_section(self, url: str, section_patterns: dict = None) -> bool:

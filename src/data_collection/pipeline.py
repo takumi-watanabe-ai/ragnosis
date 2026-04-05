@@ -5,18 +5,15 @@ Run 'make embed' separately to create vector embeddings.
 """
 
 import logging
-import os
 from datetime import date
-from dotenv import load_dotenv
 from supabase import create_client
 
-from hf_fetcher import HFModelFetcher
-from github_fetcher import GitHubFetcher
+from .hf_fetcher import HFModelFetcher
+from .github_fetcher import GitHubFetcher
+from .config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 
 def main():
@@ -25,15 +22,15 @@ def main():
     logger.info("🚀 STARTING RAG DATA PIPELINE (Tag-Driven)")
     logger.info("=" * 60)
 
-    # Get credentials
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-    hf_token = os.getenv("HUGGINGFACE_API_KEY")
-    gh_token = os.getenv("GITHUB_TOKEN")
-
-    if not supabase_url or not supabase_key:
-        logger.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
+    # Get credentials from centralized config
+    try:
+        supabase_url, supabase_key = config.get_supabase_credentials()
+    except ValueError as e:
+        logger.error(f"❌ Configuration error: {e}")
         return
+
+    hf_token = config.huggingface_api_key
+    gh_token = config.github_token
 
     supabase = create_client(supabase_url, supabase_key)
     snapshot_date = date.today().isoformat()
@@ -44,9 +41,9 @@ def main():
     logger.info("\n📥 STEP 1: Fetching HuggingFace models (tag-driven)...")
     hf_fetcher = HFModelFetcher(api_token=hf_token, supabase_client=supabase)
     
-    # NEW: Use targeted tag-based search
+    # Use targeted tag-based search
     models = hf_fetcher.fetch_by_tags(
-        max_per_tag=50,  # 50 models per tag
+        max_per_tag=50,
         min_downloads=100  # Quality threshold
     )
     
@@ -80,10 +77,10 @@ def main():
     logger.info("\n📥 STEP 2: Fetching GitHub repos (topic-driven)...")
     gh_fetcher = GitHubFetcher(api_token=gh_token, supabase_client=supabase)
     
-    # NEW: Use targeted topic-based search with quality filters
+    # Use targeted topic-based search with quality filters
     repos = gh_fetcher.fetch_by_topics(
-        max_per_topic=10,  # 10 repos per topic (reduced from 30)
-        min_stars=500,  # Quality threshold (raised from 100)
+        max_per_topic=10,
+        min_stars=500,  # Quality threshold
         min_months_since_update=12  # Only repos updated in last 12 months
     )
     

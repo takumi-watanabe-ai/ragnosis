@@ -51,3 +51,19 @@ $$;
 
 COMMENT ON FUNCTION get_by_names IS
 'Get documents by name for comparisons (e.g., "langchain vs llamaindex").';
+
+-- ============================================================================
+-- UTILITY QUERIES
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION filter_new_urls(urls_to_check TEXT[])
+RETURNS TEXT[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+AS $$
+    SELECT private.filter_new_urls(urls_to_check);
+$$;
+
+COMMENT ON FUNCTION filter_new_urls IS
+'Returns URLs from input array that are NOT in documents table. Used by embedding pipeline to identify which models/repos/articles need content fetching and embedding. Performs filtering server-side for efficiency.';

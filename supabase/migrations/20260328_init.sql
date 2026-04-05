@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS documents (
 
     -- Constraints
     CONSTRAINT valid_doc_type CHECK (doc_type IN ('hf_model', 'github_repo', 'knowledge_base')),
-    CONSTRAINT valid_scrape_method CHECK (scrape_method IS NULL OR scrape_method IN ('sitemap', 'rss'))
+    CONSTRAINT valid_scrape_method CHECK (scrape_method IS NULL OR scrape_method IN ('sitemap', 'rss', 'url_list'))
 );
 
 -- ============================================================================
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
     section TEXT,
     scrape_method TEXT NOT NULL,
     scraped_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT valid_scrape_method CHECK (scrape_method IN ('sitemap', 'rss'))
+    CONSTRAINT valid_scrape_method CHECK (scrape_method IN ('sitemap', 'rss', 'url_list'))
 );
 
 CREATE INDEX IF NOT EXISTS knowledge_base_source_idx ON knowledge_base(source);
