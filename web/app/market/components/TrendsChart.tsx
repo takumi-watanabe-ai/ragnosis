@@ -305,6 +305,7 @@ function MultiLineTrendsTooltip({
     value: number;
     color: string;
     dataKey: string;
+    payload?: { date?: string };
   }>;
 }) {
   if (active && payload && payload.length) {

@@ -65,9 +65,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
         <DialogContent>
           <DialogClose onClick={() => setOpen(false)} />
           <DialogHeader>
-            <DialogTitle className="uppercase tracking-wide">
-              Response Settings
-            </DialogTitle>
+            <DialogTitle>Response Settings</DialogTitle>
             <DialogDescription>
               Adjust how the AI generates responses
             </DialogDescription>

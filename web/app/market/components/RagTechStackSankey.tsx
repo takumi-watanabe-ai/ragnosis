@@ -157,6 +157,8 @@ export function RagTechStackSankey({ flows }: RagTechStackSankeyProps) {
         const [, type] = key.split("::");
         const columnIndex = columns[type as keyof typeof columns];
 
+        if (columnIndex === undefined) continue;
+
         if (!nodesByColumn.has(columnIndex)) {
           nodesByColumn.set(columnIndex, []);
         }

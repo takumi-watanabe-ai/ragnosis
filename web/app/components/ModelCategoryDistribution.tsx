@@ -146,12 +146,12 @@ function PieCategoryTooltip({
   return null;
 }
 
-function renderPieLabel(entry: {
-  category: string;
-  count: number;
-  percent?: number;
-}) {
-  return formatCategoryName(entry.category);
+function renderPieLabel(props: { payload?: { category?: string } }) {
+  const entry = props.payload || props;
+  if (entry && "category" in entry && entry.category) {
+    return formatCategoryName(entry.category);
+  }
+  return "";
 }
 
 interface ModelCategoryDistributionProps {

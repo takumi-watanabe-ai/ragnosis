@@ -1,5 +1,13 @@
 import { supabase } from "./supabase";
 
+export interface AuthorConcentration {
+  author: string;
+  model_count: number;
+  total_downloads: number;
+  market_share: number;
+  categories: string[];
+}
+
 export interface LanguageTopicMatrix {
   language: string;
   topic: string;
