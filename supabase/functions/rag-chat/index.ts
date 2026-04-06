@@ -16,7 +16,6 @@ import { evaluateAnswer } from "./answer-evaluator.ts";
 import type { SearchResult } from "./types.ts";
 import { RESPONSE_MESSAGES, SEPARATOR, LOG_PREFIX } from "./utils/constants.ts";
 import { cleanPartSuffix } from "./utils/formatters.ts";
-import { getResponseCache } from "./services/response-cache.ts";
 import { logger } from "./utils/logger.ts";
 
 const corsHeaders = {
@@ -48,21 +47,6 @@ serve(async (req) => {
     console.log(`\n${SEPARATOR.SECTION}`);
     logger.query(`Query: "${query}" (stream: ${stream})`);
     console.log(`${SEPARATOR.SECTION}`);
-
-    // Check response cache first (only for non-streaming requests)
-    if (!stream) {
-      const responseCache = getResponseCache();
-      const cached = await responseCache.get(query, top_k);
-
-      if (cached) {
-        logger.success(`Returning cached response`);
-        console.log(`${SEPARATOR.SECTION}\n`);
-        return new Response(
-          JSON.stringify(cached),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
 
     // Step 1: Plan (1 LLM call)
     const plan = await createQueryPlan(query, top_k, supabase);
@@ -197,9 +181,7 @@ serve(async (req) => {
         },
       };
 
-      // Cache the response for future requests
-      const responseCache = getResponseCache();
-      responseCache.set(query, top_k, responseData);
+      // Response caching removed
 
       logger.success(`Answer generated successfully`);
       console.log(`${SEPARATOR.SECTION}\n`);

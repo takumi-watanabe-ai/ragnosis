@@ -42,6 +42,10 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    -- Increase HNSW search effort to return more candidates (default is 40)
+    -- Higher ef_search = better recall but slower search
+    SET LOCAL hnsw.ef_search = 100;
+
     RETURN QUERY
     SELECT
         documents.id,

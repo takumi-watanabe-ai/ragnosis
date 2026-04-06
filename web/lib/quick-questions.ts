@@ -6,6 +6,7 @@ import {
   BookOpen,
   AlertCircle,
   TrendingUp,
+  Sparkles,
 } from "lucide-react";
 
 export interface QuickQuestion {
@@ -211,7 +212,7 @@ export const categories = [
   { id: "getting-started", label: "Getting Started", icon: BookOpen },
   { id: "how-it-works", label: "How It Works", icon: Layers },
   { id: "rag-frameworks", label: "Frameworks", icon: Wrench },
-  { id: "embeddings", label: "Embeddings", icon: Layers },
+  { id: "embeddings", label: "Embeddings", icon: Sparkles },
   { id: "vector-dbs", label: "Databases", icon: Database },
   { id: "comparisons", label: "Comparisons", icon: Scale },
   { id: "troubleshooting", label: "Troubleshooting", icon: AlertCircle },

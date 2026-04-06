@@ -54,7 +54,8 @@ DEFAULT_EDGE_FUNCTION_URL = os.getenv(
 DEFAULT_SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 DEFAULT_LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct")
-DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+# Use same embedding model as edge function for accurate relevancy measurement
+DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "Supabase/gte-small")
 DEFAULT_GOLDEN_DATA = "golden_data/golden_dataset.jsonl"
 DEFAULT_OUTPUT_DIR = "results"
 DEFAULT_TIMEOUT = 60
@@ -243,7 +244,7 @@ class RAGnosisEvaluator:
 
             prediction = {
                 "question": q["question"],
-                "ground_truth": q["ground_truth"],
+                "ground_truth": q.get("ground_truth", ""),  # Optional field
                 "answer": result.get("answer", ""),
                 "contexts": contexts,
                 "sources": result.get("sources", []),

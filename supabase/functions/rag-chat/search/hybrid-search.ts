@@ -7,7 +7,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import type { SearchResult } from '../types.ts'
 import { createReranker } from '../reranker.ts'
 import { config } from '../config.ts'
-import { getEmbeddingCache } from '../services/embedding-cache.ts'
 
 // Supabase.ai is globally available in edge runtime
 declare const Supabase: any
@@ -80,27 +79,19 @@ export class HybridSearch {
    * Vector search using k-NN
    */
   private async performVectorSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
-    // Try to get embedding from cache
-    const embeddingCache = getEmbeddingCache()
-    let embedding = await embeddingCache.get(query)
-
-    // Generate embedding if not cached
-    if (!embedding) {
-      try {
-        if (!this.aiSession) {
-          console.log(`🤖 Initializing AI session with model: ${this.embeddingModel}`)
-          // @ts-ignore
-          this.aiSession = new Supabase.ai.Session(this.embeddingModel)
-        }
-
-        embedding = await this.aiSession.run(query, { mean_pool: true, normalize: true })
-
-        // Cache the embedding for future requests
-        embeddingCache.set(query, embedding)
-      } catch (error) {
-        console.error('❌ Embedding generation failed:', error)
-        return []
+    // Generate embedding
+    let embedding: number[]
+    try {
+      if (!this.aiSession) {
+        console.log(`🤖 Initializing AI session with model: ${this.embeddingModel}`)
+        // @ts-ignore
+        this.aiSession = new Supabase.ai.Session(this.embeddingModel)
       }
+
+      embedding = await this.aiSession.run(query, { mean_pool: true, normalize: true })
+    } catch (error) {
+      console.error('❌ Embedding generation failed:', error)
+      return []
     }
 
     // Vector search params

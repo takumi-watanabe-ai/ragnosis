@@ -45,7 +45,7 @@ export const config = {
   // Search and context configuration
   search: {
     // Candidate fetching for reranking
-    candidateCount: 35, // Fetch 35 candidates from each method (70 total for RRF) - optimized balance of recall and speed
+    candidateCount: 50, // Fetch 35 candidates from each method (70 total for RRF) - optimized balance of recall and speed
 
     // Final results to return (regardless of limit param)
     finalResultCount: 20, // Return top 20 after RRF fusion

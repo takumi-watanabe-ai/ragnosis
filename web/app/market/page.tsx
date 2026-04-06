@@ -22,6 +22,12 @@ import {
   getTrendsTimeSeries,
   type TrendsTimeSeries,
 } from "@/lib/trends-analysis";
+import {
+  getTopModels,
+  getTopRepos,
+  type ModelData,
+  type RepoData,
+} from "@/lib/analytics";
 import { Section } from "./components/Section";
 import { TrendsChart } from "./components/TrendsChart";
 import { OpportunityAnalysis } from "./components/OpportunityAnalysis";
@@ -29,6 +35,7 @@ import { CompetitivePositionAnalysis } from "./components/CompetitivePositionAna
 import { LanguageTopicHeatmap } from "./components/LanguageTopicHeatmap";
 import { TechStackPatternsChart } from "./components/TechStackPatternsChart";
 import { RagTechStackSankey } from "./components/RagTechStackSankey";
+import { TopModelsRepos } from "./components/TopModelsRepos";
 import { EcosystemStats } from "@/app/components/EcosystemStats";
 import { MarketSkeleton } from "./components/MarketSkeleton";
 
@@ -45,6 +52,8 @@ export default function MarketAnalyticsPage() {
   const [stackPatterns, setStackPatterns] = useState<TechStackPattern[]>([]);
   const [sankeyFlows, setSankeyFlows] = useState<RagTechStackSankeyFlow[]>([]);
   const [trendsData, setTrendsData] = useState<TrendsTimeSeries[]>([]);
+  const [topModels, setTopModels] = useState<ModelData[]>([]);
+  const [topRepos, setTopRepos] = useState<RepoData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
@@ -64,6 +73,8 @@ export default function MarketAnalyticsPage() {
           stackData,
           sankeyData,
           trendsData,
+          modelsData,
+          reposData,
         ] = await Promise.all([
           getLanguageTopicMatrix(),
           getTaskAnalysis(),
@@ -73,6 +84,8 @@ export default function MarketAnalyticsPage() {
           getTechStackPatterns(),
           getRagTechStackSankey(),
           getTrendsTimeSeries(),
+          getTopModels(10),
+          getTopRepos(10),
         ]);
 
         setLangMatrix(matrixData);
@@ -83,6 +96,8 @@ export default function MarketAnalyticsPage() {
         setStackPatterns(stackData);
         setSankeyFlows(sankeyData);
         setTrendsData(trendsData);
+        setTopModels(modelsData);
+        setTopRepos(reposData);
       } catch (err) {
         console.error("Error loading market analysis:", err);
         setError(
@@ -193,6 +208,14 @@ export default function MarketAnalyticsPage() {
               repoPositions={repoPositions}
               isTouchDevice={isTouchDevice}
             />
+          </Section>
+
+          {/* Top Models & Repos */}
+          <Section
+            title="Top Models & Repositories"
+            subtitle="Leading models by downloads and repositories by stars"
+          >
+            <TopModelsRepos topModels={topModels} topRepos={topRepos} />
           </Section>
 
           {/* RAG Tech Stack Sankey */}

@@ -255,143 +255,119 @@ function buildAnswerPrompt(
   // Build intent-specific instructions
   const instructions = getInstructionsByIntent(intent);
 
-  return `${context}
+  // Put instructions BEFORE question so LLM reads them first
+  return `${instructions}
 
-Question: ${query}
+${context}
 
-${instructions}
+USER QUESTION: ${query}
 
-Answer:`;
+YOUR ANSWER:`;
 }
 
 /**
  * Get instructions based on query intent
  */
 function getInstructionsByIntent(intent: QueryIntent): string {
-  const baseRules = `You are a RAG/ML expert assistant. You will receive multiple sources, but you must be SELECTIVE.
+  const baseRules = `You are a RAG/ML expert assistant.
 
-**SOURCE SELECTION RULES:**
-1. EVALUATE each source - does it directly answer the user's question?
-2. IGNORE sources that are tangentially related or off-topic
-3. ONLY USE sources that contain information directly relevant to answering the question
-4. Quality over quantity - a focused answer with 2-3 relevant sources is better than a scattered answer with 20 sources
+**YOUR PRIMARY TASK:**
+Answer the user's question DIRECTLY and CONCISELY using ONLY the sources provided below.
 
-**CRITICAL ANTI-HALLUCINATION RULES:**
-1. ONLY use information EXPLICITLY stated in the sources you selected
+**STRICT GROUNDING RULES:**
+1. ONLY use information EXPLICITLY stated in the provided SOURCES
 2. DO NOT invent, guess, or use external knowledge — not even well-known facts
 3. NEVER cite sources that don't exist in the provided context
-4. If sources don't adequately answer the question, acknowledge the limitation
 
-LENGTH: Answer can never exceed ${config.llm.answer.targetWords} words. Be complete but concise.
+**LENGTH:** Maximum ${config.llm.answer.targetWords} words. Be complete but concise.
 
-FORMATTING:
-- ALWAYS reference sources inline as clickable links: **[Name](url)**
-- Only cite sources you actually used in your answer
+**FORMATTING:**
+- Reference sources inline as clickable links: **[Name](url)**
 - Use bullet points for lists
-- For structured/multi-section responses, use markdown headers (## for sections, ### for subsections)
-- Structure with line breaks for readability`;
+- Use markdown headers (## for sections, ### for subsections) only when structure adds clarity
+- Add line breaks for readability`;
 
   switch (intent) {
     case "market_intelligence":
       return `${baseRules}
 
-ANSWER APPROACH:
-- EVALUATE: Which sources directly answer the question? Ignore the rest.
-- FIRST: Directly answer the user's specific question
-- Then provide supporting details from ONLY the relevant sources
-
-Requirements:
-- Be selective - only include items that match the user's query
-- Match source types (models → HuggingFace, repos → GitHub)
-- Include metrics (downloads/likes/stars/forks) from sources you use
-- Use bullet points for multiple items`;
+**HOW TO ANSWER:**
+1. Start with a direct answer to the specific question asked
+2. Provide supporting details from sources
+3. Match source types (models → HuggingFace, repos → GitHub)
+4. Include ALL metrics (downloads/likes/stars/forks) from sources only
+5. Use bullet points for multiple items`;
 
     case "implementation":
       return `${baseRules}
 
-ANSWER APPROACH:
-- EVALUATE: Which sources contain implementation guidance for this question?
-- FIRST: Directly answer the user's specific question
-- Then provide step-by-step implementation from relevant sources
-
-Requirements:
-- Focus on sources with actionable implementation details
-- Step-by-step guidance with parameters from sources only
-- Explain what to do AND why based on sources
-- Use bullet points for steps`;
+**HOW TO ANSWER:**
+1. Start with a direct answer to what the user needs to do
+2. Provide step-by-step implementation guidance from sources
+3. Explain what to do AND why (based on sources)
+4. Use bullet points for sequential steps
+5. Include code examples or parameters only if present in sources`;
 
     case "troubleshooting":
       return `${baseRules}
 
-ANSWER APPROACH:
-- EVALUATE: Which sources address this specific problem?
-- FIRST: Directly answer what's causing the issue
-- Then provide solutions from relevant sources
-
-Requirements:
-- Focus on sources that directly address the user's problem
-- Explain root causes based only on relevant sources
-- List solutions found in the sources you selected
-- Use bullet points for multiple solutions`;
+**HOW TO ANSWER:**
+1. Start by directly stating what's causing the issue (if sources explain it)
+2. Provide solutions found in sources
+3. Explain root causes based only on sources
+4. Use bullet points for multiple solutions
+5. Prioritize solutions by effectiveness if sources indicate this`;
 
     case "comparison":
       return `${baseRules}
 
-COMPARISON FORMAT - Follow this EXACT structure:
+**HOW TO ANSWER - Follow this EXACT structure:**
 
-Start with an opening sentence stating the core difference
+1. **Opening:** Start with ONE clear sentence stating the core difference
+2. **Key Differences:** Group by FEATURE (not by product), then compare both items
+3. **When to Choose:** Provide use case guidance from sources
+
+**Example Structure:**
+Opening sentence about core difference
 
 ## Key Differences
 
-**Feature Category 1:**
+**[Feature 1]:**
 - **Item A**: [description from sources]
 - **Item B**: [description from sources]
 
-**Feature Category 2:**
+**[Feature 2]:**
 - **Item A**: [description from sources]
 - **Item B**: [description from sources]
 
 ## When to Choose
-
 - **Item A**: [use cases from sources]
 - **Item B**: [use cases from sources]
 
-CRITICAL RULES:
-1. Start with ONE sentence summarizing the main difference
-2. Group by FEATURE (not by product), then compare both items under each feature
-3. Use bullet points (-) ONLY, NO numbered lists (1. 2. 3.)
-4. Keep it concise - compare 3-5 key features maximum
-5. ONLY use information explicitly stated in the sources
-6. Compare the SAME aspects for both items (e.g., if you mention "deployment" for one, mention it for the other)`;
+**CRITICAL:**
+- Use bullet points (-) ONLY, NO numbered lists
+- Keep concise - compare 3-5 key features maximum
+- Compare the SAME aspects for both items`;
 
     case "conceptual":
     default:
-      return `You are a RAG/ML expert assistant. You will receive multiple sources - select the most relevant ones.
+      return `${baseRules}
 
-**SOURCE SELECTION FOR CONCEPTUAL QUESTIONS:**
-1. EVALUATE each source - does it explain the concept the user is asking about?
-2. IGNORE sources about unrelated concepts (e.g., if asked about "chunking", ignore sources about "retrieval")
-3. FOCUS on sources that directly address the core concept
+**CONCEPTUAL QUESTION RULES:**
+1. **Abstract away tool-specific details** - extract UNDERLYING CONCEPTS from sources
+2. **When sources mention specific tools** (Pinecone, LangChain, Weaviate, OpenAI, etc.):
+   - DON'T just repeat the tool names - extract the GENERAL CONCEPT they represent
+   - Transform: "Pinecone for vector search" → "vector databases enable similarity-based retrieval"
+   - Transform: "LangChain orchestrates RAG" → "RAG frameworks help coordinate retrieval and generation"
+   - Transform: "OpenAI embeddings" → "embedding models convert text to vectors"
+3. **Synthesize across sources** - if multiple sources describe the same concept with different tools, unify into one general explanation
+4. **Focus on HOW and WHY** things work in general, not on specific implementations
 
-**CONCEPTUAL ANSWER RULES:**
-1. Synthesize GENERAL concepts from the relevant sources (abstract away tool-specific details)
-2. When sources mention specific tools (Pinecone, LangChain, etc.), extract the UNDERLYING CONCEPT
-3. Provide a beginner-friendly explanation of how things work in general
-4. Use source examples to ILLUSTRATE concepts, not to define them
-5. If multiple sources describe similar concepts with different tools, unify the explanation
-
-LENGTH: Answer can never exceed ${config.llm.answer.targetWords} words. Be complete but concise.
-
-FORMATTING:
-- Use bullet points for lists
-- Use markdown headers (## for sections, ### for subsections)
-- Structure with line breaks for readability
-- Only cite sources you actually used
-
-Requirements:
-- FIRST: Directly answer the user's specific question with general concepts
-- Cover what, why, and how (synthesized from relevant sources only)
-- Use bullet points to organize key concepts
-- Abstract tool-specific details into general patterns`;
+**HOW TO ANSWER:**
+1. Start with a 1-2 sentence direct definition of the concept
+2. Explain HOW it works using general terms (e.g., "systems", "models", "databases" instead of brand names)
+3. Explain WHY it's used (benefits/use cases from sources)
+4. Use bullet points to organize key points
+5. Keep concrete examples general and illustrative, not tool-specific`;
   }
 }

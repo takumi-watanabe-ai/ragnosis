@@ -86,7 +86,9 @@ CREATE TABLE IF NOT EXISTS documents (
 -- ============================================================================
 
 -- Vector search (primary use case)
-CREATE INDEX IF NOT EXISTS documents_embedding_idx ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- HNSW provides better accuracy than IVFFlat for small-to-medium datasets (<1M vectors)
+-- No probe tuning needed, consistent performance
+CREATE INDEX IF NOT EXISTS documents_embedding_idx ON documents USING hnsw (embedding vector_cosine_ops);
 
 -- Basic lookups and filtering
 CREATE INDEX IF NOT EXISTS documents_doc_type_idx ON documents(doc_type);

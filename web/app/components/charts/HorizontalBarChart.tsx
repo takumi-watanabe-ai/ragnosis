@@ -20,6 +20,15 @@ interface HorizontalBarChartProps<T = Record<string, unknown>> {
   labelWidth?: number;
 }
 
+function formatAxisValue(value: number): string {
+  if (value >= 1000000) {
+    return `${(value / 1000000).toFixed(1)}M`;
+  } else if (value >= 1000) {
+    return `${(value / 1000).toFixed(0)}K`;
+  }
+  return value.toString();
+}
+
 export function HorizontalBarChart<T = Record<string, unknown>>({
   data,
   dataKey,
@@ -36,7 +45,7 @@ export function HorizontalBarChart<T = Record<string, unknown>>({
         margin={{ top: 5, right: 30, left: 150, bottom: 5 }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-        <XAxis type="number" stroke="#666666" />
+        <XAxis type="number" stroke="#666666" tickFormatter={formatAxisValue} />
         <YAxis
           type="category"
           dataKey={labelKey}

@@ -29,7 +29,9 @@ export class PassThroughReranker {
 
     console.log(`✅ Returning top ${top.length} from RRF`)
     if (top.length > 0) {
-      console.log(`   Top result: "${top[0].name.substring(0, 60)}..." (score: ${top[0].rerank_score?.toFixed(4)})`)
+      const vectorSim = top[0].vector_similarity?.toFixed(3) || 'N/A'
+      const bm25Rank = top[0].bm25_rank ? `#${top[0].bm25_rank}` : 'N/A'
+      console.log(`   Top result: "${top[0].name.substring(0, 60)}..." (vector: ${vectorSim}, bm25: ${bm25Rank})`)
     }
 
     return top
