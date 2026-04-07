@@ -49,11 +49,15 @@ export function SourceCard({
                 </span>
               )}
               {domain && (
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${badgeColor}`}
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded transition-opacity hover:opacity-70 ${badgeColor}`}
+                  title={`Visit ${domain}`}
                 >
                   {domain}
-                </span>
+                </a>
               )}
             </div>
 

@@ -154,7 +154,7 @@ function normalizeWeights(weights: DocTypeWeights): DocTypeWeights {
 
 /**
  * Create query plan - backward compatible interface
- * Now uses weighted multi-source approach instead of routing
+ * Routes to ranking sources for find_tool intent, otherwise uses weighted multi-source
  */
 export async function createQueryPlan(
   query: string,
@@ -167,8 +167,55 @@ export async function createQueryPlan(
   // Map primary intent to legacy QueryIntent
   const intent = insight ? mapPrimaryIntentToQueryIntent(insight.primary_intent) : 'conceptual'
 
-  // Always use vector_search_unified (searches all doc types)
-  // Pass doc_type_weights and nouns via params if we have insights
+  // Smart routing for find_tool intent
+  if (insight?.primary_intent === 'find_tool') {
+    const weights = insight.doc_type_weights
+    const preferModels = weights && weights.hf_model > weights.github_repo
+
+    // Detect pure discovery queries (top, best, popular, etc.)
+    const isPureDiscovery = /^(what are |which are |show me )?(the )?(top|best|most popular|popular|leading|trending|recommended|highest rated)/i.test(query.trim())
+
+    if (isPureDiscovery) {
+      // PURE DISCOVERY: Route to ranking endpoints with task filtering
+      // Extract task/category from query using LLM nouns
+      const taskFilter = insight?.nouns?.[0] || null
+      
+      const dataSource = preferModels
+        ? {
+            source: 'top_models_by_downloads' as const,
+            params: {
+              query: taskFilter || query, // Use extracted noun for filtering
+              limit: top_k,
+              task_filter: taskFilter // Will be used for task-based filtering
+            }
+          }
+        : {
+            source: 'top_repos_by_stars' as const,
+            params: {
+              query: taskFilter || query,
+              limit: top_k,
+              topic_filter: taskFilter // Will be used for topic-based filtering
+            }
+          }
+
+      console.log(`${LOG_PREFIX.PLAN} Pure discovery query - routing to ${dataSource.source}${taskFilter ? ` with filter: ${taskFilter}` : ''}`)
+
+      return {
+        intent,
+        confidence: insight?.confidence || 1.0,
+        is_valid: true,
+        reason: `Discovery query - ranking by ${preferModels ? 'downloads' : 'stars'}${taskFilter ? ` filtered by "${taskFilter}"` : ''}`,
+        data_sources: [dataSource],
+        insight: insight || undefined
+      }
+    }
+
+    // SEMANTIC SEARCH: Query has specific context, use weighted semantic search
+    console.log(`${LOG_PREFIX.PLAN} Contextual tool query - using semantic search with augmentation`)
+  }
+
+  // Default: use vector_search_unified for semantic matching + diversification
+  // Doc_type_weights guide relevance via augmentation and retrieval weighting
   const dataSource = {
     source: 'vector_search_unified' as const,
     params: {
@@ -185,9 +232,9 @@ export async function createQueryPlan(
     intent,
     confidence: insight?.confidence || 1.0,
     is_valid: true,
-    reason: insight?.reason || 'Multi-source hybrid search',
+    reason: insight?.reason || 'Multi-source semantic search with weighted retrieval',
     data_sources: [dataSource],
-    insight: insight || undefined  // Include insights for UI display
+    insight: insight || undefined
   }
 }
 

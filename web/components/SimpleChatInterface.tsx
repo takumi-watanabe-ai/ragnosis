@@ -136,13 +136,21 @@ export const SimpleChatInterface = forwardRef<
 
   // Auto-scroll only if user hasn't manually scrolled up
   useEffect(() => {
-    // Only auto-scroll if user is still at the bottom
-    // This prevents forcing scroll during streaming when user scrolls up
-    if (!isUserScrolling && checkIfAtBottom()) {
+    // Check the actual scroll position directly, don't rely solely on state
+    // This prevents race conditions during streaming
+    const isAtBottom = checkIfAtBottom();
+    const shouldAutoScroll = !userScrolledAwayRef.current || isAtBottom;
+
+    if (shouldAutoScroll) {
       // Small delay to ensure content is rendered
-      setTimeout(() => scrollToBottom(), 10);
+      setTimeout(() => {
+        // Double-check position before scrolling
+        if (!userScrolledAwayRef.current || checkIfAtBottom()) {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 10);
     }
-  }, [messages, isUserScrolling]);
+  }, [messages]);
 
   useEffect(() => {
     getEcosystemStats()

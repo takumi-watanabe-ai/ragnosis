@@ -27,15 +27,19 @@ export async function expandQuery(
 
   console.log(`🔄 Expanding query: "${originalQuery}"`)
 
-  const prompt = `Generate 2 diverse search queries that explore different aspects or angles of the original question. Each query should target different information that would help answer the original question comprehensively.
+  const prompt = `You are expanding search queries for a specialized knowledge base focused on RAG (Retrieval-Augmented Generation), vector databases, embeddings, LLMs, and AI/ML tooling.
 
 Original query: "${originalQuery}"
 
-Guidelines:
-- Query 1: Focus on a specific sub-aspect or related concept
-- Query 2: Focus on a different angle (e.g., use cases, comparison, implementation, etc.)
-- Make them meaningfully different, not just rephrased synonyms
-- Keep them concise and searchable
+Generate 2 semantic variations that:
+1. Preserve the exact intent and domain context of the original query
+2. Interpret ambiguous terms within the RAG/vector search/AI domain
+3. Use alternative technical terminology that experts in this field would use
+4. Maintain the same question type and scope
+5. Stay within the RAG/AI/ML domain - do not drift into unrelated software domains
+6. Write in the SAME LANGUAGE as the original
+
+Focus on semantic diversity through different vocabulary while keeping technical accuracy within the RAG domain.
 
 Return ONLY the 2 alternative queries, one per line, nothing else. No numbering, no explanations.`
 
@@ -49,7 +53,7 @@ Return ONLY the 2 alternative queries, one per line, nothing else. No numbering,
         prompt,
         stream: false,
         options: {
-          temperature: 0.9,  // High temperature for maximum diversity
+          temperature: 0.7,  // Moderate temperature for controlled diversity
           num_predict: 150
         }
       })

@@ -8,6 +8,7 @@ import { BaseRankingRepository, type RankingFilters } from './base-ranking-repos
 
 export interface ModelsFilters {
   author?: string  // Single author filter
+  task?: string    // Task filter (e.g., "embedding", "text-generation")
 }
 
 export class ModelsRepository extends BaseRankingRepository {
@@ -23,9 +24,55 @@ export class ModelsRepository extends BaseRankingRepository {
     limit: number,
     filters?: ModelsFilters
   ): Promise<SearchResult[]> {
-    return this.getTop(query, limit, {
-      filterValue: filters?.author
+    console.log(`📊 Top models by downloads${filters?.task ? ` (task: ${filters.task})` : ''}`)
+
+    const filterValue = filters?.author || null
+    const taskFilter = filters?.task || null
+
+    // Fetch more candidates for filtering
+    const candidateCount = 200 // Get more candidates to filter by task (increased for better filtering results)
+
+    // Call RPC to get top models
+    const { data, error } = await this.supabase.rpc('get_top_models', {
+      match_limit: candidateCount,
+      filter_author: filterValue
     })
+
+    if (error) {
+      console.error(`❌ get_top_models query failed:`, error)
+      return []
+    }
+
+    let results = (data || []).map((item: any) => this.mapToSearchResult(item))
+
+    // Client-side task filtering if task filter provided
+    if (taskFilter && results.length > 0) {
+      const taskLower = taskFilter.toLowerCase()
+      const beforeCount = results.length
+      
+      results = results.filter(r => {
+        // Match against task field (exact or partial match)
+        if (r.task) {
+          const taskFieldLower = r.task.toLowerCase()
+          if (taskFieldLower.includes(taskLower)) return true
+        }
+        
+        // Fallback: match against name or description
+        const nameLower = r.name.toLowerCase()
+        const descLower = (r.description || '').toLowerCase()
+        return nameLower.includes(taskLower) || descLower.includes(taskLower)
+      })
+      
+      console.log(`🔍 Task filter "${taskFilter}": ${beforeCount} → ${results.length} models`)
+      
+      // If filtered results are empty, fall back to unfiltered
+      if (results.length === 0) {
+        console.log(`⚠️  No models match task "${taskFilter}", returning top models without filter`)
+        results = (data || []).map((item: any) => this.mapToSearchResult(item))
+      }
+    }
+
+    return results.slice(0, limit)
   }
 
   protected getRpcName(): string {

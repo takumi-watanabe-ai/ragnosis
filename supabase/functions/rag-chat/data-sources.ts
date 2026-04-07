@@ -79,25 +79,43 @@ export async function executeDataSource(
   const limit = query.params?.limit || 5
 
   switch (query.source) {
-    case 'top_models_by_downloads':
+    case 'top_models_by_downloads': {
+      const modelsFilters: any = {}
+      if (query.params?.authors?.[0]) {
+        modelsFilters.author = query.params.authors[0]
+      }
+      if ((query.params as any)?.task_filter) {
+        modelsFilters.task = (query.params as any).task_filter
+      }
+
       return {
         primary: await getModelsRepository(supabase).getTopByDownloads(
           query.params?.query || '',
           limit,
-          query.params?.authors?.[0] ? { author: query.params.authors[0] } : undefined
+          Object.keys(modelsFilters).length > 0 ? modelsFilters : undefined
         ),
         duplicates: []
       }
+    }
 
-    case 'top_repos_by_stars':
+    case 'top_repos_by_stars': {
+      const reposFilters: any = {}
+      if (query.params?.owners?.[0]) {
+        reposFilters.owner = query.params.owners[0]
+      }
+      if ((query.params as any)?.topic_filter) {
+        reposFilters.topic = (query.params as any).topic_filter
+      }
+
       return {
         primary: await getReposRepository(supabase).getTopByStars(
           query.params?.query || '',
           limit,
-          query.params?.owners?.[0] ? { owner: query.params.owners[0] } : undefined
+          Object.keys(reposFilters).length > 0 ? reposFilters : undefined
         ),
         duplicates: []
       }
+    }
 
     case 'search_trends':
       return {
@@ -138,27 +156,39 @@ export async function executeDataSource(
         }
 
         // Search with all query variations in parallel
+        // Skip per-query reranking to keep more diverse candidates
         const perQueryLimit = config.search.candidateCount
         const allResults = await Promise.all(
-          queries.map((q, idx) => getHybridSearch(supabase).search(q, perQueryLimit, filters, idx === 0))
+          queries.map((q, idx) =>
+            getHybridSearch(supabase).search(q, perQueryLimit, filters, idx === 0, true) // skipFinalReranking=true
+          )
         )
 
         const allFlat = allResults.flat()
-        const totalBeforeDedup = allFlat.length
+        const totalBeforeRerank = allFlat.length
 
-        // Count by doc type before dedup
+        // Count by doc type before processing
         const docTypeCountsBefore = allFlat.reduce((acc, r) => {
           const type = r.doc_type || 'unknown'
           acc[type] = (acc[type] || 0) + 1
           return acc
         }, {} as Record<string, number>)
 
-        // Deduplicate by URL, keeping highest score as primary
-        // Save lower-scored duplicates for potential refinement use
+        // CRITICAL: Rerank ALL candidates BEFORE deduplication
+        // This ensures we keep the best-ranked version of each URL
+        console.log(`🔄 Reranking all ${totalBeforeRerank} candidates before deduplication...`)
+        const rerankedAll = await getHybridSearch(supabase).rerankResults(
+          originalQuery,
+          allFlat,
+          totalBeforeRerank // Keep all results, just rerank them
+        )
+
+        // Now deduplicate by URL, keeping highest reranked score as primary
+        // Save lower-scored duplicates for potential refinement in later iterations
         const urlMap = new Map<string, SearchResult>()
         const duplicates: SearchResult[] = []
 
-        allFlat.forEach(result => {
+        rerankedAll.forEach(result => {
           const existing = urlMap.get(result.url)
           if (!existing) {
             urlMap.set(result.url, result)
@@ -173,16 +203,13 @@ export async function executeDataSource(
         })
 
         const uniqueCount = urlMap.size
-        const diversityPercent = Math.round((uniqueCount / totalBeforeDedup) * 100)
-        console.log(`📊 Query expansion: ${totalBeforeDedup} total results → ${uniqueCount} unique URLs after dedup (${diversityPercent}% diversity)`)
+        const diversityPercent = Math.round((uniqueCount / totalBeforeRerank) * 100)
+        console.log(`📊 Query expansion: ${totalBeforeRerank} total → ${uniqueCount} unique URLs after dedup (${diversityPercent}% diversity)`)
 
-        // Sort duplicates by similarity (best first) for later use
-        duplicates.sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-
-        const expandedLimit = limit * queries.length
-        const sortedPrimary = Array.from(urlMap.values())
-          .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-          .slice(0, expandedLimit)
+        // Duplicates are already sorted by rerank score (descending) from rerankedAll
+        // Just need to take top N unique results
+        const expandedLimit = config.search.finalResultCount
+        const sortedPrimary = Array.from(urlMap.values()).slice(0, expandedLimit)
 
         console.log(`✅ Returning top ${sortedPrimary.length} primary results + ${duplicates.length} duplicates for potential refinement`)
 
@@ -198,10 +225,10 @@ export async function executeDataSource(
             .join(', ');
 
           progress.emit('search_results_initial',
-            `Found ${totalBeforeDedup} results across ${queries.length} queries: ${typeBreakdown}`
+            `Found ${totalBeforeRerank} results across ${queries.length} queries: ${typeBreakdown}`
           );
 
-          progress.emit('search_dedup', `Selected ${sortedPrimary.length} most relevant sources from ${totalBeforeDedup} candidates`)
+          progress.emit('search_dedup', `Selected ${sortedPrimary.length} most relevant sources from ${totalBeforeRerank} candidates`)
         }
 
         return {

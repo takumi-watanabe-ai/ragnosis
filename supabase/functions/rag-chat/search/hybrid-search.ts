@@ -43,13 +43,25 @@ export class HybridSearch {
   }
 
   /**
+   * Rerank a set of results (public method for post-processing)
+   */
+  async rerankResults(
+    query: string,
+    results: SearchResult[],
+    limit: number
+  ): Promise<SearchResult[]> {
+    return await this.reranker.rerank(query, results, limit, this.supabase)
+  }
+
+  /**
    * Perform hybrid search combining vector and text search
    */
   async search(
     query: string,
     limit: number,
     filters?: SearchFilters,
-    verbose: boolean = true
+    verbose: boolean = true,
+    skipFinalReranking: boolean = false
   ): Promise<SearchResult[]> {
     if (verbose) {
       console.log(`🔍 Hybrid search (k-NN + BM25): "${query}"`)
@@ -69,10 +81,83 @@ export class HybridSearch {
       console.log(`📊 Text search: ${textResults.length} results`)
     }
 
-    // Merge with Reciprocal Rank Fusion (RRF)
-    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2, filters, verbose)
+    // AUGMENTATION: If doc_type weights show strong preference for models/repos,
+    // fetch top-ranked items to ensure good candidates in the pool
+    let augmentedVectorResults = vectorResults
+    let augmentedTextResults = textResults
+    
+    if (filters?.doc_type_weights) {
+      const weights = filters.doc_type_weights
+      const augmentationThreshold = 0.6
+      
+      // Count existing results by doc_type
+      const countByType = (results: SearchResult[]) => {
+        const counts: Record<string, number> = {}
+        results.forEach(r => {
+          counts[r.doc_type] = (counts[r.doc_type] || 0) + 1
+        })
+        return counts
+      }
+      
+      const combinedCounts = countByType([...vectorResults, ...textResults])
+      
+      // Augment with top models if: high weight AND few existing models
+      if (weights.hf_model >= augmentationThreshold && (combinedCounts.hf_model || 0) < 10) {
+        const topModels = await this.fetchTopModels(query, 20, filters?.author)
+        if (topModels.length > 0) {
+          augmentedVectorResults = [...augmentedVectorResults, ...topModels]
+          if (verbose) {
+            console.log(`🔝 Augmented with ${topModels.length} top HF models (weight: ${weights.hf_model})`)
+          }
+        }
+      }
+      
+      // Augment with top repos if: high weight AND few existing repos
+      if (weights.github_repo >= augmentationThreshold && (combinedCounts.github_repo || 0) < 10) {
+        const topRepos = await this.fetchTopRepos(query, 20, filters?.owner)
+        if (topRepos.length > 0) {
+          augmentedTextResults = [...augmentedTextResults, ...topRepos]
+          if (verbose) {
+            console.log(`🔝 Augmented with ${topRepos.length} top GitHub repos (weight: ${weights.github_repo})`)
+          }
+        }
+      }
+    }
+
+    // Merge with Reciprocal Rank Fusion (RRF) - fair fusion first
+    let merged = this.mergeWithRRF(augmentedVectorResults, augmentedTextResults, this.config.candidateCount * 2, filters, verbose)
     if (verbose) {
       console.log(`📊 Merged: ${merged.length} unique results`)
+    }
+
+    // Apply doc_type weights AFTER RRF, BEFORE reranking
+    // This boosts preferred doc types in the merged candidate pool
+    if (filters?.doc_type_weights) {
+      const weights = filters.doc_type_weights
+      if (verbose) {
+        console.log('🎯 Applying doc_type weights to RRF scores:', weights)
+      }
+      
+      merged = merged.map(r => ({
+        ...r,
+        similarity: (r.similarity || 0) * (weights[r.doc_type] || 0.5),
+        rerank_score: (r.rerank_score || 0) * (weights[r.doc_type] || 0.5)
+      }))
+      
+      // Re-sort by weighted scores
+      merged.sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      
+      if (verbose) {
+        console.log(`✅ Re-sorted ${merged.length} results by weighted scores`)
+      }
+    }
+
+    // Skip reranking if requested (e.g., for query expansion where we rerank later)
+    if (skipFinalReranking) {
+      if (verbose) {
+        console.log(`⏭️  Skipping reranking, returning ${merged.length} merged candidates`)
+      }
+      return merged
     }
 
     // Rerank merged results (checks feature flag for cross-encoder)
@@ -82,6 +167,84 @@ export class HybridSearch {
     }
 
     return reranked
+  }
+
+  /**
+   * Fetch top models by downloads for augmentation
+   */
+  private async fetchTopModels(
+    query: string,
+    limit: number,
+    author?: string
+  ): Promise<SearchResult[]> {
+    try {
+      const { data, error } = await this.supabase.rpc('get_top_models', {
+        match_limit: limit,
+        filter_author: author || null
+      })
+
+      if (error) {
+        console.error(`❌ Failed to fetch top models:`, error)
+        return []
+      }
+
+      return (data || []).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description || '',
+        url: m.url,
+        doc_type: 'hf_model' as const,
+        similarity: 0.5, // Lower initial score so semantic matches can win
+        rerank_score: 0.5,
+        downloads: m.downloads,
+        likes: m.likes,
+        ranking_position: m.ranking_position,
+        author: m.author,
+        task: m.task
+      }))
+    } catch (err) {
+      console.error(`❌ Exception fetching top models:`, err)
+      return []
+    }
+  }
+
+  /**
+   * Fetch top repos by stars for augmentation
+   */
+  private async fetchTopRepos(
+    query: string,
+    limit: number,
+    owner?: string
+  ): Promise<SearchResult[]> {
+    try {
+      const { data, error } = await this.supabase.rpc('get_top_repos', {
+        match_limit: limit,
+        filter_owner: owner || null
+      })
+
+      if (error) {
+        console.error(`❌ Failed to fetch top repos:`, error)
+        return []
+      }
+
+      return (data || []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description || '',
+        url: r.url,
+        doc_type: 'github_repo' as const,
+        similarity: 0.5, // Lower initial score so semantic matches can win
+        rerank_score: 0.5,
+        stars: r.stars,
+        forks: r.forks,
+        ranking_position: r.ranking_position,
+        owner: r.owner,
+        language: r.language
+      }))
+    } catch (err) {
+      console.error(`❌ Exception fetching top repos:`, err)
+      return []
+    }
   }
 
   /**
@@ -169,7 +332,7 @@ export class HybridSearch {
    * Merge results using weighted Reciprocal Rank Fusion (RRF)
    * RRF formula: score(d) = sum(weight * 1 / (k + rank(d))) for each ranking
    * Weights from config: 60% vector (semantic), 40% BM25 (keyword)
-   * Then applies doc_type_weights if provided by LLM planner
+   * Doc_type_weights are applied AFTER this merge in the search() method
    * Note: BM25 results are pre-filtered by nouns at the query level
    */
   private mergeWithRRF(
@@ -204,19 +367,9 @@ export class HybridSearch {
       }
     })
 
-    // Apply LLM-based doc_type weights if provided
-    if (filters?.doc_type_weights && verbose) {
-      console.log('🎯 Applying LLM doc_type weights:', filters.doc_type_weights)
-    }
-    if (filters?.doc_type_weights) {
-      scores.forEach((value) => {
-        const docType = value.result.doc_type
-        const weight = filters.doc_type_weights![docType] || 0.5
-        value.score *= weight
-      })
-    }
-
-    // Sort by RRF score
+    // Sort by RRF score (no artificial weight multiplication)
+    // Augmentation already ensured we have the right candidates
+    // Let the reranker judge them fairly
     const sorted = Array.from(scores.values())
       .sort((a, b) => b.score - a.score)
       .map(({ result, score }) => ({
@@ -246,14 +399,14 @@ export class HybridSearch {
     const deduplicated = Array.from(urlMap.values()).flat()
 
     if (verbose) {
-      console.log(`📊 Using RRF scores directly`)
-      console.log(`✅ Returning top ${Math.min(limit, deduplicated.length)} from RRF`)
+      console.log(`📊 Fair RRF merge without artificial weight boosting`)
+      console.log(`✅ Returning top ${Math.min(limit, deduplicated.length)} candidates for reranking`)
       if (deduplicated.length > 0) {
         const topResult = deduplicated[0]
         const cleanName = topResult.name.length > 50
           ? topResult.name.substring(0, 47) + '...'
           : topResult.name
-        console.log(`   Top result: "${cleanName}" (vector: ${topResult.vector_similarity?.toFixed(3) || 'N/A'}, bm25: ${topResult.bm25_rank ? 'N/A' : 'N/A'})`)
+        console.log(`   Top result: "${cleanName}" (RRF score: ${topResult.similarity?.toFixed(3)})`)
       }
     }
 
