@@ -82,6 +82,16 @@ export const config = {
     finalResultCount: 20, // Rerank to top 20 based on query relevance
   },
 
+  // Answer quality evaluation thresholds
+  evaluation: {
+    minAnswerLength: 50,
+    minScoreForIteration: 70,  // Total score threshold to pass evaluation
+    minAccuracy: 7,             // Hard requirement: must have proper citations
+    minClarity: 7,              // Hard requirement: must have clear structure
+    minFaithfulness: 0.7,
+    maxIterations: 3,           // Maximum refinement iterations
+  },
+
   // Feature flags - DEFAULT VALUES ONLY (fallback when DB unavailable)
   // Actual flags are stored in database (see services/feature-flags.ts)
   // These defaults match the initial values in the migration

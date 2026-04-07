@@ -1,6 +1,6 @@
 -- Private Google Trends analysis functions
 
--- Get trends time series data with cumulative interest
+-- Get trends time series data with cumulative interest (top 16 keywords only)
 CREATE OR REPLACE FUNCTION private.get_trends_time_series_internal()
 RETURNS TABLE (
   keyword TEXT,
@@ -11,13 +11,22 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
   RETURN QUERY
-  WITH trends_expanded AS (
+  WITH top_keywords AS (
+    -- Get top 16 keywords by current interest
+    SELECT gt.keyword
+    FROM google_trends gt
+    WHERE gt.current_interest IS NOT NULL
+    ORDER BY gt.current_interest DESC
+    LIMIT 16
+  ),
+  trends_expanded AS (
     SELECT
       gt.keyword,
       gt.category,
       (jsonb_array_elements(gt.time_series)->>'date')::DATE as date,
       (jsonb_array_elements(gt.time_series)->>'value')::INT as interest
     FROM google_trends gt
+    INNER JOIN top_keywords tk ON gt.keyword = tk.keyword
     WHERE gt.time_series IS NOT NULL
       AND jsonb_array_length(gt.time_series) > 0
   )

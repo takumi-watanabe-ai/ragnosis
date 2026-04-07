@@ -202,12 +202,53 @@ function prepareTrendsChartData(trendsData: TrendsTimeSeries[]) {
     return { chartData: [], keywords: [], colors: [], summaries: [] };
   }
 
-  const keywords = Array.from(new Set(trendsData.map((t) => t.keyword)));
+  const allKeywords = Array.from(new Set(trendsData.map((t) => t.keyword)));
   const dates = Array.from(new Set(trendsData.map((t) => t.date))).sort();
+  const latestDate = dates[dates.length - 1];
+  const previousDate = dates.length > 1 ? dates[dates.length - 2] : null;
+
+  // Calculate current interest for each keyword to determine ranking
+  const keywordInterest = allKeywords.map((keyword) => {
+    const currentInterest =
+      trendsData.find((t) => t.date === latestDate && t.keyword === keyword)
+        ?.interest || 0;
+    return { keyword, currentInterest };
+  });
+
+  // Sort keywords by current interest (highest first) for color assignment
+  const sortedKeywords = keywordInterest
+    .sort((a, b) => b.currentInterest - a.currentInterest)
+    .map((k) => k.keyword);
+
+  // Color palette sorted by end ranking (#1-#16)
+  const colorPalette = [
+    "#4682b4", // #1 Steel Blue
+    "#8b0000", // #2 Dark Red
+    "#2e8b57", // #3 Sea Green
+    "#d2691e", // #4 Orange
+    "#8b4789", // #5 Purple
+    "#b8860b", // #6 Dark Goldenrod
+    "#5f9ea0", // #7 Cadet Blue/Teal
+    "#c75b9b", // #8 Pale Violet Red/Pink
+    "#9acd32", // #9 Yellow Green
+    "#9370db", // #10 Medium Purple
+    "#bc8f8f", // #11 Rosy Brown
+    "#8fbc8f", // #12 Dark Sea Green
+    "#cd853f", // #13 Peru/Tan
+    "#708090", // #14 Slate Gray
+    "#2f4f4f", // #15 Dark Slate Gray
+    "#696969", // #16 Dim Gray
+  ];
+
+  // Create color mapping based on sorted keywords
+  const colorMap = new Map<string, string>();
+  sortedKeywords.forEach((keyword, idx) => {
+    colorMap.set(keyword, colorPalette[idx % colorPalette.length]);
+  });
 
   const chartData = dates.map((date) => {
     const row: Record<string, string | number> = { date };
-    keywords.forEach((keyword) => {
+    sortedKeywords.forEach((keyword) => {
       const entry = trendsData.find(
         (t) => t.date === date && t.keyword === keyword,
       );
@@ -216,27 +257,7 @@ function prepareTrendsChartData(trendsData: TrendsTimeSeries[]) {
     return row;
   });
 
-  const colorPalette = [
-    "#222222",
-    "#2e8b57",
-    "#4682b4",
-    "#d2691e",
-    "#8b4789",
-    "#c75b9b",
-    "#8fbc8f",
-    "#c77e3c",
-    "#666666",
-    "#8b0000",
-  ];
-  const colors = keywords.map(
-    (_, idx) => colorPalette[idx % colorPalette.length],
-  );
-
-  const latestDate = dates[dates.length - 1];
-  // Compare against previous data point (week-over-week for weekly data)
-  const previousDate = dates.length > 1 ? dates[dates.length - 2] : null;
-
-  const summaries: KeywordSummary[] = keywords.map((keyword, idx) => {
+  const summaries: KeywordSummary[] = sortedKeywords.map((keyword, idx) => {
     const keywordData = trendsData.filter((t) => t.keyword === keyword);
     const interests = keywordData.map((t) => t.interest);
     const average = interests.reduce((a, b) => a + b, 0) / interests.length;
@@ -244,48 +265,38 @@ function prepareTrendsChartData(trendsData: TrendsTimeSeries[]) {
     const currentInterest =
       keywordData.find((t) => t.date === latestDate)?.interest || 0;
 
+    let rankChange: "up" | "down" | "same" | "new" = "same";
+    if (previousDate) {
+      const prevInterest =
+        trendsData.find((t) => t.date === previousDate && t.keyword === keyword)
+          ?.interest || 0;
+
+      if (prevInterest === 0) {
+        rankChange = "new";
+      } else if (currentInterest > prevInterest) {
+        rankChange = "up";
+      } else if (currentInterest < prevInterest) {
+        rankChange = "down";
+      }
+    }
+
     return {
       keyword,
-      color: colors[idx],
+      color: colorMap.get(keyword)!,
       average: Math.round(average),
       highest,
       currentInterest,
-      currentRank: 0,
-      rankChange: "same" as const,
+      currentRank: idx + 1,
+      rankChange,
     };
   });
 
-  const currentRankings = [...summaries]
-    .sort((a, b) => b.currentInterest - a.currentInterest)
-    .map((s, idx) => ({ keyword: s.keyword, rank: idx + 1 }));
-
-  currentRankings.forEach(({ keyword, rank }) => {
-    const summary = summaries.find((s) => s.keyword === keyword);
-    if (summary) summary.currentRank = rank;
-  });
-
-  if (previousDate) {
-    summaries.forEach((summary) => {
-      const prevInterest =
-        trendsData.find(
-          (t) => t.date === previousDate && t.keyword === summary.keyword,
-        )?.interest || 0;
-
-      if (prevInterest === 0) {
-        summary.rankChange = "new";
-      } else if (summary.currentInterest > prevInterest) {
-        summary.rankChange = "up";
-      } else if (summary.currentInterest < prevInterest) {
-        summary.rankChange = "down";
-      } else {
-        summary.rankChange = "same";
-      }
-    });
-  }
-
-  summaries.sort((a, b) => a.currentRank - b.currentRank);
-
-  return { chartData, keywords, colors, summaries };
+  return {
+    chartData,
+    keywords: sortedKeywords,
+    colors: sortedKeywords.map((k) => colorMap.get(k)!),
+    summaries,
+  };
 }
 
 function MultiLineTrendsTooltip({

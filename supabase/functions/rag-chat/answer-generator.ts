@@ -70,6 +70,103 @@ export async function* generateAnswerStream(
 }
 
 /**
+ * Collect full answer from stream (for internal iteration)
+ */
+async function collectStreamedAnswer(
+  query: string,
+  results: SearchResult[],
+  intent: QueryIntent,
+  supabase?: SupabaseClient,
+): Promise<string> {
+  let fullAnswer = '';
+  
+  for await (const chunk of generateAnswerStream(query, results, intent, supabase)) {
+    fullAnswer += chunk;
+  }
+  
+  return fullAnswer;
+}
+
+/**
+ * Generate improved answer based on evaluation feedback
+ * Adapted from iterative RAG improvement patterns
+ */
+export async function* generateAnswerStreamWithFeedback(
+  query: string,
+  results: SearchResult[],
+  intent: QueryIntent,
+  previousIssues: string[],
+  evaluation: any,
+  supabase?: SupabaseClient,
+): AsyncIterableIterator<string> {
+  const isListQuery = PATTERNS.LIST_QUERY.test(query);
+
+  let prompt: string;
+  if (intent === "market_intelligence" && isListQuery && results.length > 0) {
+    prompt = buildMarketIntelligencePrompt(query, results);
+  } else {
+    prompt = buildAnswerPrompt(query, results, intent);
+  }
+
+  // Build focused improvement instructions based on weakest dimension
+  let criticalFix = '';
+  if (evaluation.accuracy < 7) {
+    criticalFix = `
+⚠️ CRITICAL: Previous answer had ZERO inline citations!
+You MUST add [1], [2], [3] citations after EVERY claim.
+Example: "RAG uses vector search [1]. LangChain provides embeddings [2]."
+DO NOT write ANY sentence without a citation number.`;
+  } else if (evaluation.clarity < 7) {
+    criticalFix = `
+⚠️ CRITICAL: Previous answer had NO structure!
+You MUST use headers and bullets:
+## Overview
+## Key Points
+- First point [1]
+- Second point [2]`;
+  } else if (evaluation.specificity < 7) {
+    criticalFix = `
+⚠️ CRITICAL: Previous answer was too vague!
+Include SPECIFIC numbers, versions, tool names from sources.
+Replace vague phrases with concrete facts.`;
+  } else if (evaluation.completeness < 7) {
+    criticalFix = `
+⚠️ CRITICAL: Previous answer was too brief!
+Expand to at least 400 words with comprehensive coverage.
+Add examples and detailed explanations.`;
+  }
+
+  const improvementGuidance = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  PREVIOUS ANSWER WAS REJECTED - REGENERATE WITH FIXES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${criticalFix}
+
+Issues found:
+${previousIssues.slice(0, 3).map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+
+Score: ${evaluation.score}/100 (Target: 85+)
+- Completeness: ${evaluation.completeness}/10
+- Accuracy: ${evaluation.accuracy}/10
+- Clarity: ${evaluation.clarity}/10
+- Specificity: ${evaluation.specificity}/10
+
+Generate a COMPLETE REWRITE that fixes ALL issues above. Follow the format requirements strictly.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
+  const improvedPrompt = prompt + improvementGuidance;
+
+  try {
+    yield* generateWithLLMStream(improvedPrompt);
+  } catch (error) {
+    console.error(`${LOG_PREFIX.ERROR} Answer generation with feedback failed:`, error);
+    yield RESPONSE_MESSAGES.GENERATION_ERROR;
+  }
+}
+
+/**
  * Build prompt for market intelligence queries with strict grounding
  */
 function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): string {
@@ -282,34 +379,39 @@ YOUR ANSWER:`;
  * Get instructions based on query intent
  */
 function getInstructionsByIntent(intent: QueryIntent): string {
-  const baseRules = `You are a RAG/ML expert assistant.
+  const baseRules = `You are an expert AI/ML assistant. Answer using ONLY the sources below.
 
-**YOUR PRIMARY TASK:**
-Answer the user's question DIRECTLY and CONCISELY using ONLY the sources provided below.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MANDATORY REQUIREMENTS (YOUR ANSWER WILL BE REJECTED IF YOU DON'T FOLLOW):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**CRITICAL: CITATIONS ARE MANDATORY**
-You MUST cite every factual claim with citation numbers [1], [2], etc.
-- Add the citation marker [1] immediately after EACH statement that comes from a source
-- NEVER make a claim without citing the source with [1], [2], [3], etc.
-- You can use multiple citations together: [1][2] or [1, 2]
-- Also reference sources as clickable links when mentioning them by name: **[Name](url)**
+1. STRUCTURE: Use this exact format:
+   ## Overview
+   [2-3 sentences with [1] citations]
 
-**STRICT GROUNDING RULES:**
-1. ONLY use information EXPLICITLY stated in the provided SOURCES
-2. DO NOT invent, guess, or use external knowledge — not even well-known facts
-3. NEVER cite sources that don't exist in the provided context
+   ## Key Points
+   - Point with specifics [1]
+   - Point with metrics/numbers [2]
 
-**LENGTH:** Maximum ${config.llm.answer.targetWords} words. Be complete but concise.
+   ## Details
+   [Comprehensive explanation]
 
-**FORMATTING:**
-- Use bullet points for lists
-- Use markdown headers (## for sections, ### for subsections) only when structure adds clarity
-- Add line breaks for readability
+2. CITATIONS: EVERY FACT needs inline [1], [2], [3]
+   - Put [number] immediately after EACH claim
+   - Use **[Source Name](url)** when mentioning by name
+   - Example: "RAG uses vector search [1]. **[LangChain](url)** implements this [2]."
 
-**EXAMPLE OF PROPER CITATION:**
-"RAG combines retrieval with generation [1]. It uses vector databases for similarity search [2][3]. Popular implementations include **[LangChain](url)** [1] and **[LlamaIndex](url)** [2]."
+3. SPECIFICS: Include actual numbers, versions, tool names from sources
+   - ✓ "GPT-4 has 1.76T parameters [1]"
+   - ✗ "The model is large"
 
-Notice how EVERY factual statement has a [1], [2], or [3] citation marker.`;
+4. NO VAGUE LANGUAGE:
+   - ✗ "according to sources", "the data shows", "generally", "it depends"
+   - ✓ Specific claims with inline citations
+
+**LENGTH:** Max ${config.llm.answer.targetWords} words. Be thorough but concise.
+
+**GROUNDING:** ONLY use information from provided sources. NO external knowledge.`;
 
   switch (intent) {
     case "market_intelligence":

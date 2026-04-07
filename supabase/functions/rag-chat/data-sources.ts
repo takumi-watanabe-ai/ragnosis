@@ -75,26 +75,35 @@ export async function executeDataSource(
   query: DataSourceQuery,
   supabase: SupabaseClient,
   progress?: ProgressEmitter
-): Promise<SearchResult[]> {
+): Promise<{ primary: SearchResult[], duplicates: SearchResult[] }> {
   const limit = query.params?.limit || 5
 
   switch (query.source) {
     case 'top_models_by_downloads':
-      return await getModelsRepository(supabase).getTopByDownloads(
-        query.params?.query || '',  // Pass query for reranking
-        limit,
-        query.params?.authors?.[0] ? { author: query.params.authors[0] } : undefined
-      )
+      return {
+        primary: await getModelsRepository(supabase).getTopByDownloads(
+          query.params?.query || '',
+          limit,
+          query.params?.authors?.[0] ? { author: query.params.authors[0] } : undefined
+        ),
+        duplicates: []
+      }
 
     case 'top_repos_by_stars':
-      return await getReposRepository(supabase).getTopByStars(
-        query.params?.query || '',  // Pass query for reranking
-        limit,
-        query.params?.owners?.[0] ? { owner: query.params.owners[0] } : undefined
-      )
+      return {
+        primary: await getReposRepository(supabase).getTopByStars(
+          query.params?.query || '',
+          limit,
+          query.params?.owners?.[0] ? { owner: query.params.owners[0] } : undefined
+        ),
+        duplicates: []
+      }
 
     case 'search_trends':
-      return await getTrendsRepository(supabase).getTopTrends(limit)
+      return {
+        primary: await getTrendsRepository(supabase).getTopTrends(limit),
+        duplicates: []
+      }
 
     case 'vector_search_unified': {
       const originalQuery = query.params?.query || ''
@@ -129,10 +138,7 @@ export async function executeDataSource(
         }
 
         // Search with all query variations in parallel
-        // Use higher limit per query to get more diverse candidates before dedup
-        // Each query gets candidateCount (50) to maximize recall
         const perQueryLimit = config.search.candidateCount
-        // Only show detailed logs for the first query to reduce redundancy
         const allResults = await Promise.all(
           queries.map((q, idx) => getHybridSearch(supabase).search(q, perQueryLimit, filters, idx === 0))
         )
@@ -147,12 +153,22 @@ export async function executeDataSource(
           return acc
         }, {} as Record<string, number>)
 
-        // Merge and deduplicate by URL, keeping highest score
+        // Deduplicate by URL, keeping highest score as primary
+        // Save lower-scored duplicates for potential refinement use
         const urlMap = new Map<string, SearchResult>()
+        const duplicates: SearchResult[] = []
+
         allFlat.forEach(result => {
           const existing = urlMap.get(result.url)
-          if (!existing || (result.similarity || 0) > (existing.similarity || 0)) {
+          if (!existing) {
             urlMap.set(result.url, result)
+          } else if ((result.similarity || 0) > (existing.similarity || 0)) {
+            // New result is better - swap them
+            duplicates.push(existing)
+            urlMap.set(result.url, result)
+          } else {
+            // Existing is better - save this as duplicate
+            duplicates.push(result)
           }
         })
 
@@ -160,17 +176,17 @@ export async function executeDataSource(
         const diversityPercent = Math.round((uniqueCount / totalBeforeDedup) * 100)
         console.log(`📊 Query expansion: ${totalBeforeDedup} total results → ${uniqueCount} unique URLs after dedup (${diversityPercent}% diversity)`)
 
-        // When using query expansion, return more results since we have diverse queries
-        // The final limiting will happen in index.ts
+        // Sort duplicates by similarity (best first) for later use
+        duplicates.sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+
         const expandedLimit = limit * queries.length
-        const sortedResults = Array.from(urlMap.values())
+        const sortedPrimary = Array.from(urlMap.values())
           .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
           .slice(0, expandedLimit)
 
-        console.log(`✅ Returning top ${sortedResults.length} results from expanded search`)
+        console.log(`✅ Returning top ${sortedPrimary.length} primary results + ${duplicates.length} duplicates for potential refinement`)
 
         if (progress) {
-          // Show initial search results breakdown by type
           const typeBreakdown = Object.entries(docTypeCountsBefore)
             .map(([type, count]) => {
               const label = type === 'hf_model' ? 'HF models'
@@ -185,11 +201,13 @@ export async function executeDataSource(
             `Found ${totalBeforeDedup} results across ${queries.length} queries: ${typeBreakdown}`
           );
 
-          // Show deduplication results
-          progress.emit('search_dedup', `Deduplicated to ${uniqueCount} unique sources`)
+          progress.emit('search_dedup', `Selected ${sortedPrimary.length} most relevant sources from ${totalBeforeDedup} candidates`)
         }
 
-        return sortedResults
+        return {
+          primary: sortedPrimary,
+          duplicates
+        }
       }
 
       // Non-expansion path
@@ -197,12 +215,14 @@ export async function executeDataSource(
         progress.emit('search_start', 'Searching data sources...')
       }
 
-      // Default: single query search with LLM-guided weights (if available)
-      return await getHybridSearch(supabase).search(originalQuery, limit, filters)
+      return {
+        primary: await getHybridSearch(supabase).search(originalQuery, limit, filters),
+        duplicates: []
+      }
     }
 
     default:
       console.error(`${LOG_PREFIX.ERROR} Unknown data source: ${query.source}`)
-      return []
+      return { primary: [], duplicates: [] }
   }
 }

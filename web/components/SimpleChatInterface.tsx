@@ -68,20 +68,81 @@ export const SimpleChatInterface = forwardRef<
     new Set(),
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initialQuestionSentRef = useRef(false);
   const [loadingDots, setLoadingDots] = useState("");
   const [ecosystemStats, setEcosystemStats] = useState<EcosystemStats | null>(
     null,
   );
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const userScrolledAwayRef = useRef(false);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (force = false) => {
+    if (force || !isUserScrolling) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
+  // Check if user is near bottom (within 100px)
+  const checkIfAtBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+
+    const threshold = 100;
+    const position = container.scrollTop + container.clientHeight;
+    const height = container.scrollHeight;
+
+    return position >= height - threshold;
+  };
+
+  // Handle scroll detection
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    // Detect manual scroll interactions (wheel, touch)
+    const handleUserInteraction = () => {
+      userScrolledAwayRef.current = true;
+    };
+
+    const handleScroll = () => {
+      const atBottom = checkIfAtBottom();
+
+      // If user scrolled back to bottom, allow auto-scroll again
+      if (atBottom) {
+        userScrolledAwayRef.current = false;
+        setIsUserScrolling(false);
+      } else if (userScrolledAwayRef.current) {
+        // User has manually scrolled and is not at bottom
+        setIsUserScrolling(true);
+      }
+    };
+
+    container.addEventListener("wheel", handleUserInteraction, {
+      passive: true,
+    });
+    container.addEventListener("touchmove", handleUserInteraction, {
+      passive: true,
+    });
+    container.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener("wheel", handleUserInteraction);
+      container.removeEventListener("touchmove", handleUserInteraction);
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  // Auto-scroll only if user hasn't manually scrolled up
+  useEffect(() => {
+    // Only auto-scroll if user is still at the bottom
+    // This prevents forcing scroll during streaming when user scrolls up
+    if (!isUserScrolling && checkIfAtBottom()) {
+      // Small delay to ensure content is rendered
+      setTimeout(() => scrollToBottom(), 10);
+    }
+  }, [messages, isUserScrolling]);
 
   useEffect(() => {
     getEcosystemStats()
@@ -163,6 +224,11 @@ export const SimpleChatInterface = forwardRef<
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+
+    // Reset scroll state and force scroll to bottom for new query
+    userScrolledAwayRef.current = false;
+    setIsUserScrolling(false);
+    setTimeout(() => scrollToBottom(true), 100);
 
     // Create placeholder assistant message for streaming
     const assistantMessageId = (Date.now() + 1).toString();
@@ -315,7 +381,7 @@ export const SimpleChatInterface = forwardRef<
   return (
     <div className="flex flex-col h-full bg-cream">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
         <div className="max-w-3xl mx-auto space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-start justify-start pt-16 max-w-2xl">
@@ -603,6 +669,21 @@ export const SimpleChatInterface = forwardRef<
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Scroll to Bottom Button */}
+      {isUserScrolling && (
+        <div className="absolute bottom-24 right-8 z-10">
+          <button
+            onClick={() => {
+              setIsUserScrolling(false);
+              scrollToBottom(true);
+            }}
+            className="bg-charcoal text-cream px-4 py-2 rounded-full shadow-lg hover:bg-stone transition-colors text-xs uppercase tracking-wider font-normal"
+          >
+            ↓ New messages
+          </button>
+        </div>
+      )}
 
       {/* Input Area */}
       <div className="border-t border-stone-border p-6 bg-white">

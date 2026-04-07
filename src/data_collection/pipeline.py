@@ -51,6 +51,8 @@ def main():
     logger.info(f"   Found {len(models)} RAG models via targeted search")
 
     if models:
+        # Note: fetch_by_tags() already checked _has_data_for_today()
+        # We only reach here if today's snapshot doesn't exist yet
         rows = [
             {
                 "id": m.id,
@@ -68,8 +70,24 @@ def main():
             }
             for m in models
         ]
-        supabase.table("hf_models").upsert(rows).execute()
-        logger.info(f"   ✅ Inserted {len(rows)} models")
+
+        # Strategy: For existing entities, delete old snapshots and insert fresh one
+        # For new entities, just insert. This ensures one row per entity.
+        model_ids = [m.id for m in models]
+
+        # Delete ANY existing snapshots for these entities (in batches to avoid URI too long)
+        batch_size = 50
+        total_deleted = 0
+        for i in range(0, len(model_ids), batch_size):
+            batch = model_ids[i:i + batch_size]
+            deleted = supabase.table("hf_models").delete().in_("id", batch).execute()
+            total_deleted += len(deleted.data) if deleted.data else 0
+        logger.info(f"   🗑️  Deleted {total_deleted} old snapshots")
+
+        # Insert fresh snapshots with today's date
+        # No conflict possible since we just deleted all existing rows for these IDs
+        supabase.table("hf_models").insert(rows).execute()
+        logger.info(f"   ✅ Inserted {len(rows)} models for {snapshot_date}")
 
     # ========================================
     # STEP 2: Fetch GitHub Repos (Topic-Driven)
@@ -107,8 +125,24 @@ def main():
             }
             for r in repos
         ]
-        supabase.table("github_repos").upsert(rows).execute()
-        logger.info(f"   ✅ Inserted {len(rows)} repos")
+
+        # Strategy: For existing entities, delete old snapshots and insert fresh one
+        # For new entities, just insert. This ensures one row per entity.
+        repo_ids = [r.id for r in repos]
+
+        # Delete ANY existing snapshots for these entities (in batches to avoid URI too long)
+        batch_size = 50
+        total_deleted = 0
+        for i in range(0, len(repo_ids), batch_size):
+            batch = repo_ids[i:i + batch_size]
+            deleted = supabase.table("github_repos").delete().in_("id", batch).execute()
+            total_deleted += len(deleted.data) if deleted.data else 0
+        logger.info(f"   🗑️  Deleted {total_deleted} old snapshots")
+
+        # Insert fresh snapshots with today's date
+        # No conflict possible since we just deleted all existing rows for these IDs
+        supabase.table("github_repos").insert(rows).execute()
+        logger.info(f"   ✅ Inserted {len(rows)} repos for {snapshot_date}")
 
     # ========================================
     # Summary

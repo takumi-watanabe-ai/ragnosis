@@ -33,7 +33,7 @@ CREATE POLICY "Authenticated users can read feature flags"
 -- Insert default flags from config.ts
 INSERT INTO public.feature_flags (flag_name, enabled, config, description) VALUES
   ('query_planner', false, '{"model": "qwen2.5:3b-instruct", "use_weights": true}', 'LLM Query Planner - weighted multi-source search with doc_type weights'),
-  ('answer_evaluator', false, '{}', 'Answer quality evaluator - fast heuristic-based quality checking'),
+  ('answer_evaluator', true, '{"min_answer_length": 50, "min_score_for_iteration": 70, "min_accuracy": 7, "min_clarity": 7, "min_faithfulness": 0.7, "max_iterations": 3}', 'Answer quality evaluator - iterative refinement with configurable thresholds'),
   ('query_expansion', false, '{"max_variations": 2}', 'Generate semantic query variations to improve recall'),
   ('cross_encoder_reranking', false, '{"max_chars": 500}', 'Use cross-encoder for reranking instead of score fusion'),
   ('response_caching', false, '{"ttl_seconds": 300, "max_size_mb": 50}', 'Enable response caching to reduce LLM calls')

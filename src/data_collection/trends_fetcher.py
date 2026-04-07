@@ -44,14 +44,19 @@ class GoogleTrendsFetcher:
             "RAG",  # Ambiguous but HIGH signal
             "retrieval augmented generation",
             "vector database",
+            "vector search",
             "semantic search",
             "embedding",
+            "hybrid search",
+            "reranking",
+            "sentence transformers",
         ],
         # RAG frameworks (specific tools)
         "frameworks": [
             "LangChain",
             "LlamaIndex",
             "Haystack",  # Simple name
+            "DSPy",
         ],
         # Vector databases (specific tools - simple names)
         "vector_dbs": [
@@ -60,6 +65,8 @@ class GoogleTrendsFetcher:
             "Weaviate",
             "Milvus",
             "Chroma",  # Yes, includes color but we want the signal
+            "Faiss",
+            "pgvector",
         ],
         # Agent terms (track agent trend)
         "agent_terms": ["AI agent", "agentic AI", "autonomous agent"],

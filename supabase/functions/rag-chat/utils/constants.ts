@@ -3,6 +3,8 @@
  * Eliminates magic numbers and repeated patterns across the codebase
  */
 
+import { config } from '../config.ts'
+
 // ============================================================================
 // REGEX PATTERNS
 // ============================================================================
@@ -38,8 +40,11 @@ export const PATTERNS = {
 export const THRESHOLDS = {
   // Answer quality
   MIN_ANSWER_LENGTH: 50,
-  MIN_SCORE_FOR_ITERATION: 60,
+  MIN_SCORE_FOR_ITERATION: 70,  // Total score threshold
+  MIN_ACCURACY: 7,   // Hard requirement: must have citations
+  MIN_CLARITY: 7,    // Hard requirement: must have structure
   MIN_FAITHFULNESS: 0.7,
+  MAX_ITERATIONS: 3,
 
   // Search & ranking
   MAX_TASKS_IN_PROMPT: 15,
