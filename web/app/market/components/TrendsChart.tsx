@@ -26,15 +26,10 @@ interface KeywordSummary {
 
 interface TrendsChartProps {
   trendsData: TrendsTimeSeries[];
-  isTouchDevice?: boolean;
   maxTableRows?: number;
 }
 
-export function TrendsChart({
-  trendsData,
-  isTouchDevice = false,
-  maxTableRows,
-}: TrendsChartProps) {
+export function TrendsChart({ trendsData, maxTableRows }: TrendsChartProps) {
   const leftMargin = useResponsiveMargin();
   const rightMargin = useResponsiveRightMargin();
   const yOffset = useResponsiveYOffset();
@@ -90,12 +85,10 @@ export function TrendsChart({
               },
             }}
           />
-          {!isTouchDevice && (
-            <Tooltip
-              content={<MultiLineTrendsTooltip />}
-              cursor={{ stroke: "#666666", strokeDasharray: "3 3" }}
-            />
-          )}
+          <Tooltip
+            content={<MultiLineTrendsTooltip />}
+            cursor={{ stroke: "#666666", strokeDasharray: "3 3" }}
+          />
           {keywords.map((keyword, idx) => (
             <Line
               key={keyword}

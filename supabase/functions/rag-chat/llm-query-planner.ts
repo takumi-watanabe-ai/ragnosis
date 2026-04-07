@@ -186,7 +186,8 @@ export async function createQueryPlan(
     confidence: insight?.confidence || 1.0,
     is_valid: true,
     reason: insight?.reason || 'Multi-source hybrid search',
-    data_sources: [dataSource]
+    data_sources: [dataSource],
+    insight: insight || undefined  // Include insights for UI display
   }
 }
 

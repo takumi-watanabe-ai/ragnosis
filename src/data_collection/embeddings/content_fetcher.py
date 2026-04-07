@@ -6,6 +6,7 @@ Responsible for fetching model cards and README files from external sources.
 
 import logging
 import base64
+import re
 from typing import Optional
 
 import requests
@@ -16,6 +17,67 @@ logger = logging.getLogger(__name__)
 
 class ContentFetcher:
     """Fetches content from HuggingFace and GitHub APIs."""
+
+    @staticmethod
+    def clean_markdown_html(text: str) -> str:
+        """
+        Clean markdown and HTML from text content for better embedding quality.
+
+        Removes:
+        - HTML tags (<div>, <img>, <a>, etc.)
+        - Markdown links (keep link text, remove URL)
+        - Markdown images (remove entirely)
+        - Excessive whitespace and newlines
+        - Markdown code fences (keep code content)
+        - HTML entities
+
+        Args:
+            text: Raw markdown/HTML text
+
+        Returns:
+            Cleaned plain text
+        """
+        if not text:
+            return ""
+
+        # Remove HTML comments
+        text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+
+        # Remove HTML tags but keep content
+        text = re.sub(r'<[^>]+>', ' ', text)
+
+        # Convert markdown images to nothing (they have no semantic value)
+        text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+
+        # Convert markdown links to just the link text
+        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+
+        # Remove markdown code fences but keep content
+        text = re.sub(r'```[\w]*\n', '\n', text)
+        text = re.sub(r'```', '', text)
+
+        # Remove markdown headers (# ## ###) but keep text
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+
+        # Remove markdown bold/italic markers
+        text = re.sub(r'\*\*([^\*]+)\*\*', r'\1', text)  # **bold**
+        text = re.sub(r'\*([^\*]+)\*', r'\1', text)      # *italic*
+        text = re.sub(r'__([^_]+)__', r'\1', text)       # __bold__
+        text = re.sub(r'_([^_]+)_', r'\1', text)         # _italic_
+
+        # Remove HTML entities
+        text = re.sub(r'&[a-zA-Z]+;', ' ', text)
+        text = re.sub(r'&#\d+;', ' ', text)
+
+        # Collapse multiple newlines/whitespace
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        text = re.sub(r' +', ' ', text)
+
+        # Remove leading/trailing whitespace from each line
+        text = '\n'.join(line.strip() for line in text.split('\n'))
+
+        # Final trim
+        return text.strip()
 
     def fetch_hf_model_card(self, model_name: str, hf_token: Optional[str] = None) -> Optional[str]:
         """
@@ -30,7 +92,8 @@ class ContentFetcher:
         """
         try:
             card = ModelCard.load(model_name, token=hf_token)
-            return card.content
+            # Clean markdown/HTML for better embedding quality
+            return self.clean_markdown_html(card.content) if card.content else None
         except Exception as e:
             logger.warning(f"   ⚠️ Failed to fetch model card for {model_name}: {e}")
             return None
@@ -61,7 +124,8 @@ class ContentFetcher:
                     data = response.json()
                     # Decode base64 content
                     content = base64.b64decode(data["content"]).decode("utf-8")
-                    return content
+                    # Clean markdown/HTML for better embedding quality
+                    return self.clean_markdown_html(content)
             except Exception as e:
                 logger.debug(f"   ⚠️ Failed to fetch {filename} for {repo_name}: {e}")
                 continue

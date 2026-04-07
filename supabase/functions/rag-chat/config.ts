@@ -51,13 +51,13 @@ export const config = {
     finalResultCount: 20, // Return top 20 after RRF fusion
 
     // Multiple chunks per URL (for chunked documents)
-    maxChunksPerUrl: 1, // Keep up to 3 relevant chunks per URL
+    maxChunksPerUrl: 100, // Keep up to 3 relevant chunks per URL
 
     // Context sizing (token-optimized)
     context: {
-      primaryExcerpt: 400, // Top 2 sources get full context
-      secondaryExcerpt: 150, // Sources 3-20 get moderate context
-      descriptionMax: 150, // Description truncation
+      primaryExcerpt: 600, // Top 2 sources get full context
+      secondaryExcerpt: 400, // Sources 3-20 get moderate context
+      descriptionMax: 300, // Description truncation
     },
 
     // Reranking config

@@ -4,7 +4,7 @@
  */
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-import type { DataSourceQuery, SearchResult } from './types.ts'
+import type { DataSourceQuery, SearchResult, ProgressEmitter } from './types.ts'
 import { config } from './config.ts'
 import { HybridSearch } from './search/hybrid-search.ts'
 import { ModelsRepository } from './sources/models-repository.ts'
@@ -73,7 +73,8 @@ function getTrendsRepository(supabase: SupabaseClient): TrendsRepository {
  */
 export async function executeDataSource(
   query: DataSourceQuery,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  progress?: ProgressEmitter
 ): Promise<SearchResult[]> {
   const limit = query.params?.limit || 5
 
@@ -116,27 +117,84 @@ export async function executeDataSource(
       const expansionEnabled = await featureFlags.isEnabled('query_expansion')
 
       if (expansionEnabled) {
-        const queries = await expandQuery(originalQuery)
+        if (progress) {
+          progress.emit('expansion_start', `Expanding query into ${config.features.queryExpansion.maxVariations + 1} diverse search variations...`)
+        }
+
+        const queries = await expandQuery(originalQuery, progress)
         console.log(`${LOG_PREFIX.SEARCH} Searching with ${queries.length} query variations`)
 
+        if (progress) {
+          progress.emit('search_start', 'Searching multiple data sources in parallel...')
+        }
+
         // Search with all query variations in parallel
+        // Use higher limit per query to get more diverse candidates before dedup
+        // Each query gets candidateCount (50) to maximize recall
+        const perQueryLimit = config.search.candidateCount
+        // Only show detailed logs for the first query to reduce redundancy
         const allResults = await Promise.all(
-          queries.map(q => getHybridSearch(supabase).search(q, limit, filters))
+          queries.map((q, idx) => getHybridSearch(supabase).search(q, perQueryLimit, filters, idx === 0))
         )
+
+        const allFlat = allResults.flat()
+        const totalBeforeDedup = allFlat.length
+
+        // Count by doc type before dedup
+        const docTypeCountsBefore = allFlat.reduce((acc, r) => {
+          const type = r.doc_type || 'unknown'
+          acc[type] = (acc[type] || 0) + 1
+          return acc
+        }, {} as Record<string, number>)
 
         // Merge and deduplicate by URL, keeping highest score
         const urlMap = new Map<string, SearchResult>()
-        allResults.flat().forEach(result => {
+        allFlat.forEach(result => {
           const existing = urlMap.get(result.url)
           if (!existing || (result.similarity || 0) > (existing.similarity || 0)) {
             urlMap.set(result.url, result)
           }
         })
 
-        // Return top results sorted by similarity
-        return Array.from(urlMap.values())
+        const uniqueCount = urlMap.size
+        const diversityPercent = Math.round((uniqueCount / totalBeforeDedup) * 100)
+        console.log(`📊 Query expansion: ${totalBeforeDedup} total results → ${uniqueCount} unique URLs after dedup (${diversityPercent}% diversity)`)
+
+        // When using query expansion, return more results since we have diverse queries
+        // The final limiting will happen in index.ts
+        const expandedLimit = limit * queries.length
+        const sortedResults = Array.from(urlMap.values())
           .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-          .slice(0, limit)
+          .slice(0, expandedLimit)
+
+        console.log(`✅ Returning top ${sortedResults.length} results from expanded search`)
+
+        if (progress) {
+          // Show initial search results breakdown by type
+          const typeBreakdown = Object.entries(docTypeCountsBefore)
+            .map(([type, count]) => {
+              const label = type === 'hf_model' ? 'HF models'
+                : type === 'github_repo' ? 'GitHub repos'
+                : type === 'knowledge_base' ? 'articles'
+                : type;
+              return `${count} ${label}`;
+            })
+            .join(', ');
+
+          progress.emit('search_results_initial',
+            `Found ${totalBeforeDedup} results across ${queries.length} queries: ${typeBreakdown}`
+          );
+
+          // Show deduplication results
+          progress.emit('search_dedup', `Deduplicated to ${uniqueCount} unique sources`)
+        }
+
+        return sortedResults
+      }
+
+      // Non-expansion path
+      if (progress) {
+        progress.emit('search_start', 'Searching data sources...')
       }
 
       // Default: single query search with LLM-guided weights (if available)

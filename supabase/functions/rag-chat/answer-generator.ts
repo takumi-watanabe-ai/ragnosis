@@ -105,9 +105,11 @@ Question: ${query}
 
 ANSWER REQUIREMENTS:
 
-1. For EACH model/repo, provide:
+1. For EACH item, provide:
    - Name as clickable link: **[Name](URL)**
-   - Key metrics (downloads/stars/likes)
+   - CORRECT metrics based on type:
+     * HuggingFace models → Downloads (ALWAYS in data)
+     * GitHub repos → Stars (ALWAYS in data)
    - What it's good for (from description/task)
    - When to use it (based on description)
 
@@ -118,14 +120,23 @@ ANSWER REQUIREMENTS:
 3. STRICT RULES:
    - NEVER mention items not in the list above
    - NEVER invent features or capabilities
+   - NEVER say "Not specified" for downloads/stars - they're ALWAYS present
+   - NEVER mix model metrics with repo metrics
    - Base ALL context on the descriptions provided
 
-Answer format:
-## Top [Models/Repos]
+Answer format for HuggingFace models:
+## Top Models
 
-1. **[Name](URL)** - [Downloads/Stars]
+1. **[Name](URL)** - Downloads: [exact number from data]
    - **What**: [From description]
    - **Best for**: [From task/description]
+
+Answer format for GitHub repos:
+## Top Repos
+
+1. **[Name](URL)** - Stars: [exact number from data]
+   - **What**: [From description]
+   - **Best for**: [From description]
 
 ## Choosing the Right One
 - [Decision guide from data above only]
@@ -186,9 +197,11 @@ function buildAnswerPrompt(
   intent: QueryIntent,
 ): string {
   // Build context from results with smart sizing
+  // Note: Citation markers are already added in index.ts
   let context = "SOURCES:\n";
 
   results.forEach((item, i) => {
+    const citationNum = i + 1;
     // Clean both name and title to remove (Part X/Y)
     const cleanName = cleanPartSuffix(item.name);
     const cleanTitle = item.metadata?.title
@@ -196,7 +209,7 @@ function buildAnswerPrompt(
       : cleanName;
     const sourceLink = markdownLink(cleanTitle, item.url);
 
-    context += `\n- ${sourceLink}`;
+    context += `\n[${citationNum}] ${sourceLink}`;
 
     // Add type indicator
     if (item.doc_type === "hf_model") context += ` (Type: HuggingFace Model)`;
@@ -274,6 +287,13 @@ function getInstructionsByIntent(intent: QueryIntent): string {
 **YOUR PRIMARY TASK:**
 Answer the user's question DIRECTLY and CONCISELY using ONLY the sources provided below.
 
+**CRITICAL: CITATIONS ARE MANDATORY**
+You MUST cite every factual claim with citation numbers [1], [2], etc.
+- Add the citation marker [1] immediately after EACH statement that comes from a source
+- NEVER make a claim without citing the source with [1], [2], [3], etc.
+- You can use multiple citations together: [1][2] or [1, 2]
+- Also reference sources as clickable links when mentioning them by name: **[Name](url)**
+
 **STRICT GROUNDING RULES:**
 1. ONLY use information EXPLICITLY stated in the provided SOURCES
 2. DO NOT invent, guess, or use external knowledge — not even well-known facts
@@ -282,10 +302,14 @@ Answer the user's question DIRECTLY and CONCISELY using ONLY the sources provide
 **LENGTH:** Maximum ${config.llm.answer.targetWords} words. Be complete but concise.
 
 **FORMATTING:**
-- Reference sources inline as clickable links: **[Name](url)**
 - Use bullet points for lists
 - Use markdown headers (## for sections, ### for subsections) only when structure adds clarity
-- Add line breaks for readability`;
+- Add line breaks for readability
+
+**EXAMPLE OF PROPER CITATION:**
+"RAG combines retrieval with generation [1]. It uses vector databases for similarity search [2][3]. Popular implementations include **[LangChain](url)** [1] and **[LlamaIndex](url)** [2]."
+
+Notice how EVERY factual statement has a [1], [2], or [3] citation marker.`;
 
   switch (intent) {
     case "market_intelligence":
@@ -324,30 +348,39 @@ Answer the user's question DIRECTLY and CONCISELY using ONLY the sources provide
 **HOW TO ANSWER - Follow this EXACT structure:**
 
 1. **Opening:** Start with ONE clear sentence stating the core difference
-2. **Key Differences:** Group by FEATURE (not by product), then compare both items
+2. **Key Differences:** Group by FEATURE (not by product), then compare both items using their ACTUAL NAMES
 3. **When to Choose:** Provide use case guidance from sources
+
+**CRITICAL - USE ACTUAL NAMES:**
+- DO NOT use generic placeholders like "Item A" or "Item B"
+- ALWAYS use the actual product/tool/concept names from the user's question
+- Example: If comparing "LangChain vs LlamaIndex", use those exact names
 
 **Example Structure:**
 Opening sentence about core difference
 
 ## Key Differences
 
-**[Feature 1]:**
-- **Item A**: [description from sources]
-- **Item B**: [description from sources]
+**Core Architecture:**
+- **FirstTool**: [How it works from sources]
+- **SecondTool**: [How it works from sources]
 
-**[Feature 2]:**
-- **Item A**: [description from sources]
-- **Item B**: [description from sources]
+**Performance:**
+- **FirstTool**: [Speed/efficiency from sources]
+- **SecondTool**: [Speed/efficiency from sources]
 
 ## When to Choose
-- **Item A**: [use cases from sources]
-- **Item B**: [use cases from sources]
+- **FirstTool**: [Use cases from sources]
+- **SecondTool**: [Use cases from sources]
 
-**CRITICAL:**
+NOTE: Replace "FirstTool" and "SecondTool" with the ACTUAL names from the user's question.
+Replace feature categories with SPECIFIC aspects (not generic like "Feature 1").
+
+**FORMATTING RULES:**
 - Use bullet points (-) ONLY, NO numbered lists
 - Keep concise - compare 3-5 key features maximum
-- Compare the SAME aspects for both items`;
+- Compare the SAME aspects for both items
+- NEVER use "Item A" or "Item B" - always use the actual names`;
 
     case "conceptual":
     default:

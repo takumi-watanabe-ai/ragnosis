@@ -48,29 +48,38 @@ export class HybridSearch {
   async search(
     query: string,
     limit: number,
-    filters?: SearchFilters
+    filters?: SearchFilters,
+    verbose: boolean = true
   ): Promise<SearchResult[]> {
-    console.log(`🔍 Hybrid search (k-NN + BM25): "${query}"`)
-    if (filters?.nouns?.length) {
-      console.log(`🎯 BM25 noun filtering enabled:`, filters.nouns)
+    if (verbose) {
+      console.log(`🔍 Hybrid search (k-NN + BM25): "${query}"`)
+      if (filters?.nouns?.length) {
+        console.log(`🎯 BM25 noun filtering enabled:`, filters.nouns)
+      }
     }
 
     // Run both searches in parallel
     const [vectorResults, textResults] = await Promise.all([
-      this.performVectorSearch(query, filters),
-      this.performTextSearch(query, filters)
+      this.performVectorSearch(query, filters, verbose),
+      this.performTextSearch(query, filters, verbose)
     ])
 
-    console.log(`📊 Vector search: ${vectorResults.length} results`)
-    console.log(`📊 Text search: ${textResults.length} results`)
+    if (verbose) {
+      console.log(`📊 Vector search: ${vectorResults.length} results`)
+      console.log(`📊 Text search: ${textResults.length} results`)
+    }
 
     // Merge with Reciprocal Rank Fusion (RRF)
-    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2, filters)
-    console.log(`📊 Merged: ${merged.length} unique results`)
+    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2, filters, verbose)
+    if (verbose) {
+      console.log(`📊 Merged: ${merged.length} unique results`)
+    }
 
     // Rerank merged results (checks feature flag for cross-encoder)
     const reranked = await this.reranker.rerank(query, merged, this.config.finalResultCount, this.supabase)
-    console.log(`✅ Hybrid search complete: ${reranked.length} results after reranking`)
+    if (verbose) {
+      console.log(`✅ Hybrid search complete: ${reranked.length} results after reranking`)
+    }
 
     return reranked
   }
@@ -78,12 +87,14 @@ export class HybridSearch {
   /**
    * Vector search using k-NN
    */
-  private async performVectorSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
+  private async performVectorSearch(query: string, filters?: SearchFilters, verbose: boolean = true): Promise<SearchResult[]> {
     // Generate embedding
     let embedding: number[]
     try {
       if (!this.aiSession) {
-        console.log(`🤖 Initializing AI session with model: ${this.embeddingModel}`)
+        if (verbose) {
+          console.log(`🤖 Initializing AI session with model: ${this.embeddingModel}`)
+        }
         // @ts-ignore
         this.aiSession = new Supabase.ai.Session(this.embeddingModel)
       }
@@ -121,14 +132,16 @@ export class HybridSearch {
   /**
    * Full-text search using BM25
    */
-  private async performTextSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
+  private async performTextSearch(query: string, filters?: SearchFilters, verbose: boolean = true): Promise<SearchResult[]> {
     const rpcParams = {
       search_query: query,
       match_limit: this.config.candidateCount,
       filter_doc_type: filters?.doc_type || null,
       filter_nouns: filters?.nouns || null
     }
-    console.log('🔍 Text search RPC params:', JSON.stringify(rpcParams, null, 2))
+    if (verbose) {
+      console.log('🔍 Text search RPC params:', JSON.stringify(rpcParams, null, 2))
+    }
 
     const { data, error } = await this.supabase.rpc('text_search_documents', rpcParams)
 
@@ -163,7 +176,8 @@ export class HybridSearch {
     vectorResults: SearchResult[],
     textResults: SearchResult[],
     limit: number,
-    filters?: SearchFilters
+    filters?: SearchFilters,
+    verbose: boolean = true
   ): SearchResult[] {
     const k = 60  // RRF constant (typical value)
     const vectorWeight = config.search.reranker.fusion.vectorWeight
@@ -191,8 +205,10 @@ export class HybridSearch {
     })
 
     // Apply LLM-based doc_type weights if provided
-    if (filters?.doc_type_weights) {
+    if (filters?.doc_type_weights && verbose) {
       console.log('🎯 Applying LLM doc_type weights:', filters.doc_type_weights)
+    }
+    if (filters?.doc_type_weights) {
       scores.forEach((value) => {
         const docType = value.result.doc_type
         const weight = filters.doc_type_weights![docType] || 0.5
@@ -211,7 +227,9 @@ export class HybridSearch {
 
     // Keep top N chunks per URL (for chunked documents)
     const maxChunks = config.search.maxChunksPerUrl
-    console.log(`🔗 Keeping up to ${maxChunks} chunks per URL`)
+    if (verbose) {
+      console.log(`🔗 Keeping up to ${maxChunks} chunks per URL`)
+    }
 
     const urlMap = new Map<string, SearchResult[]>()
     sorted.forEach(r => {
@@ -226,6 +244,18 @@ export class HybridSearch {
 
     // Flatten back to array, maintaining sort order
     const deduplicated = Array.from(urlMap.values()).flat()
+
+    if (verbose) {
+      console.log(`📊 Using RRF scores directly`)
+      console.log(`✅ Returning top ${Math.min(limit, deduplicated.length)} from RRF`)
+      if (deduplicated.length > 0) {
+        const topResult = deduplicated[0]
+        const cleanName = topResult.name.length > 50
+          ? topResult.name.substring(0, 47) + '...'
+          : topResult.name
+        console.log(`   Top result: "${cleanName}" (vector: ${topResult.vector_similarity?.toFixed(3) || 'N/A'}, bm25: ${topResult.bm25_rank ? 'N/A' : 'N/A'})`)
+      }
+    }
 
     return deduplicated.slice(0, limit)
   }

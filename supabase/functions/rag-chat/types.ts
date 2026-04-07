@@ -33,6 +33,7 @@ export interface QueryPlan {
   is_valid: boolean
   reason: string
   data_sources: DataSourceQuery[]
+  insight?: QueryInsight  // Optional query insights for UI display
 }
 
 export interface SearchResult {
@@ -76,6 +77,13 @@ export interface SearchResult {
 
   // Metadata tracking
   snapshot_date?: string
+
+  // Citation support - for inline references and document viewing
+  marker?: string            // Citation marker (e.g., "[1]", "[KB-1]")
+  chunk_text?: string        // Actual text snippet from the source document
+  chunk_id?: string          // Unique identifier for this chunk
+  char_offset?: number       // Character offset in original document
+  chunk_length?: number      // Length of the chunk in characters
 }
 
 /**
@@ -107,4 +115,20 @@ export interface QueryInsight {
   nouns?: string[]  // Key nouns/entities for BM25 boosting
   confidence: number
   reason: string
+}
+
+/**
+ * Progress event for streaming real-time updates to frontend
+ */
+export interface ProgressEvent {
+  type: 'progress'
+  step: string
+  message: string
+}
+
+/**
+ * Progress emitter interface for streaming real-time updates
+ */
+export interface ProgressEmitter {
+  emit(step: string, message: string): void
 }

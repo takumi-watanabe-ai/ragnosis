@@ -149,6 +149,8 @@ BEGIN
   UNION ALL
   SELECT 'total_repos'::TEXT, COUNT(*)::TEXT FROM github_repos
   UNION ALL
+  SELECT 'total_articles'::TEXT, COUNT(*)::TEXT FROM knowledge_base
+  UNION ALL
   SELECT 'total_authors'::TEXT, COUNT(DISTINCT author)::TEXT FROM hf_models
   UNION ALL
   SELECT 'total_owners'::TEXT, COUNT(DISTINCT owner)::TEXT FROM github_repos

@@ -179,10 +179,7 @@ export default function MarketAnalyticsPage() {
               title="Market Interest Over Time"
               subtitle="Search interest trends across RAG ecosystem keywords"
             >
-              <TrendsChart
-                trendsData={trendsData}
-                isTouchDevice={isTouchDevice}
-              />
+              <TrendsChart trendsData={trendsData} />
             </Section>
           )}
 
@@ -210,10 +207,10 @@ export default function MarketAnalyticsPage() {
             />
           </Section>
 
-          {/* Top Models & Repos */}
+          {/* Top Repos & Models */}
           <Section
-            title="Top Models & Repositories"
-            subtitle="Leading models by downloads and repositories by stars"
+            title="Top Repositories & Models"
+            subtitle="Leading repositories by stars and models by downloads"
           >
             <TopModelsRepos topModels={topModels} topRepos={topRepos} />
           </Section>
