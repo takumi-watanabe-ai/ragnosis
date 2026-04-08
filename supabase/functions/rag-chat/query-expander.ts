@@ -2,7 +2,7 @@
  * Query Expansion - Generate semantic variations to improve recall
  */
 
-import { config } from "./config.ts";
+import { getLLMClient } from "./services/llm-client.ts";
 import type { ProgressEmitter } from "./types.ts";
 
 /**
@@ -36,31 +36,17 @@ Generate 2 semantic variations that:
 
 Focus on semantic diversity through different vocabulary while keeping technical accuracy within the RAG domain.
 
-Return ONLY the 2 alternative queries, one per line, nothing else. No numbering, no explanations.`;
+Return EXACTLY 2 alternative queries, one per line. No numbering, bullets, or explanations. Just 2 lines.`;
 
   try {
-    // Use Ollama for query expansion (fast local model)
-    const response = await fetch(`${config.llm.ollama.url}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.llm.ollama.model,
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.7, // Moderate temperature for controlled diversity
-          num_predict: 150,
-        },
-      }),
+    // Use LLM client (auto-detects OpenRouter/Ollama based on environment)
+    const llmClient = getLLMClient();
+    const responseText = await llmClient.generate(prompt, {
+      temperature: 0.7,
+      maxTokens: 300, // Increased for OpenRouter models (more verbose than Ollama)
     });
 
-    if (!response.ok) {
-      return [originalQuery];
-    }
-
-    const data = await response.json();
-    const expansions = data.response
-      .trim()
+    const expansions = responseText
       .split("\n")
       .map((q: string) => q.trim().replace(/^[-•*\d.]+\s*/, ""))
       .filter((q: string) => q.length > 0)

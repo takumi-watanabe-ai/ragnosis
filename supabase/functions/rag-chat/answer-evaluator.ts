@@ -4,7 +4,7 @@
  * Provides smarter, more nuanced evaluation than heuristics
  */
 
-import { LOG_PREFIX } from "./utils/constants.ts";
+import { LOG_PREFIX, WEIGHTS, THRESHOLDS } from "./utils/constants.ts";
 import { getFeatureFlagService } from "./services/feature-flags.ts";
 import { getLLMClient } from "./services/llm-client.ts";
 
@@ -87,13 +87,10 @@ Evaluate the answer on the following 4 dimensions using a 0-10 scale:
   "accuracy": <number 0-10>,
   "clarity": <number 0-10>,
   "specificity": <number 0-10>,
-  "issues": [<array of strings - each string is one actionable directive>]
+  "issues": [<array of concise action items>]
 }
 
-**Each issue string must be a complete directive:**
-Include WHAT to fix, WHERE in the answer, WHICH source, and the specific data to add.
-Write as clear instructions that can be executed directly.
-Do not use nested objects - just plain strings.`;
+**Issue format:** Brief, actionable fix (max 100 chars). Example: "Add inline citations [1][2] after each claim in Overview"`;
 }
 
 /**
@@ -122,9 +119,14 @@ export async function evaluateAnswer(
     // Build LLM evaluation prompt
     const prompt = buildEvaluationPrompt(question, answer, sourcesUsed);
 
-    // Call LLM with automatic JSON parsing
+    // Call LLM with automatic JSON parsing (increased tokens for detailed issues)
     const llmClient = getLLMClient();
-    const llmResponse = await llmClient.chatJson<LLMEvaluationResponse>(prompt);
+    const llmResponse = await llmClient.chatJson<LLMEvaluationResponse>(
+      prompt,
+      {
+        maxTokens: 2000, // Increased from default to handle detailed issues array
+      },
+    );
 
     if (!llmResponse) {
       console.error(`${LOG_PREFIX.WARNING} LLM evaluation failed`);
@@ -139,16 +141,17 @@ export async function evaluateAnswer(
 
     // Calculate weighted composite score (0-100)
     const rawScore =
-      relevancy * 3.5 + // 35% weight (most important)
-      accuracy * 3.0 + // 30% weight
-      clarity * 1.75 + // 17.5% weight
-      specificity * 1.75; // 17.5% weight
+      relevancy * WEIGHTS.EVALUATION.RELEVANCY +      // 35% weight (most important)
+      accuracy * WEIGHTS.EVALUATION.ACCURACY +        // 30% weight
+      clarity * WEIGHTS.EVALUATION.CLARITY +          // 17.5% weight
+      specificity * WEIGHTS.EVALUATION.SPECIFICITY;   // 17.5% weight
 
     const finalScore = Math.max(0, Math.min(100, Math.round(rawScore)));
 
     // Confidence calibration
     const confidence =
-      finalScore >= 85 ? "high" : finalScore >= 60 ? "medium" : "low";
+      finalScore >= THRESHOLDS.EVAL_CONFIDENCE_HIGH ? "high" :
+      finalScore >= THRESHOLDS.EVAL_CONFIDENCE_MEDIUM ? "medium" : "low";
 
     // Iteration decision
     const shouldIterate = finalScore < config.min_score_for_iteration;

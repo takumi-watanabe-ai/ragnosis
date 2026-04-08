@@ -37,6 +37,21 @@ def main():
         logger.info(f"   Found {len(trends)} trend keywords")
 
         if trends:
+            # Deduplicate trends by keyword (keep first occurrence - the baseline)
+            seen_keywords = set()
+            unique_trends = []
+            for t in trends:
+                if t.keyword not in seen_keywords:
+                    unique_trends.append(t)
+                    seen_keywords.add(t.keyword)
+                else:
+                    logger.debug(f"   Skipping duplicate: {t.keyword}")
+
+            if len(unique_trends) < len(trends):
+                logger.info(
+                    f"   Deduplicated: {len(trends)} → {len(unique_trends)} unique keywords"
+                )
+
             rows = [
                 {
                     "id": t.id,
@@ -48,7 +63,7 @@ def main():
                     "time_series": t.time_series,
                     "related_queries": t.related_queries,
                 }
-                for t in trends
+                for t in unique_trends
             ]
             supabase.table("google_trends").upsert(rows).execute()
             logger.info(f"   ✅ Upserted {len(rows)} trends (overwrites existing)")

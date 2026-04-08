@@ -158,7 +158,7 @@ export async function executeDataSource(
         if (progress) {
           progress.emit(
             "query_expander",
-            `Expanding query into ${config.features.queryExpansion.maxVariations + 1} diverse search variations...`,
+            `Expanding query into 3 diverse search variations...`,  // Always 2 variations + 1 original
           );
         }
 

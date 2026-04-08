@@ -51,7 +51,7 @@ export const config = {
     finalResultCount: 20, // Return top 20 after RRF fusion
 
     // Multiple chunks per URL (for chunked documents)
-    maxChunksPerUrl: 100, // Keep up to 3 relevant chunks per URL
+    maxChunksPerUrl: 100, // Maximum chunks per URL for deduplication
 
     // Context sizing (token-optimized)
     context: {
@@ -82,15 +82,9 @@ export const config = {
     finalResultCount: 20, // Rerank to top 20 based on query relevance
   },
 
-  // Answer quality evaluation thresholds
-  evaluation: {
-    minAnswerLength: 50,
-    minScoreForIteration: 70,  // Total score threshold to pass evaluation
-    minAccuracy: 7,             // Hard requirement: must have proper citations
-    minClarity: 7,              // Hard requirement: must have clear structure
-    minFaithfulness: 0.7,
-    maxIterations: 3,           // Maximum refinement iterations
-  },
+  // Answer evaluation thresholds are managed via database feature flags
+  // See: services/feature-flags.ts (answer_evaluator config)
+  // No static config needed - all values fetched from database at runtime
 
   // Feature flags - DEFAULT VALUES ONLY (fallback when DB unavailable)
   // Actual flags are stored in database (see services/feature-flags.ts)
@@ -106,7 +100,7 @@ export const config = {
     // Query expansion - generate semantic variations to improve recall
     queryExpansion: {
       enabled: false, // Default: OFF
-      maxVariations: 2, // Number of query variations to generate
+      // Note: Always generates exactly 2 variations (hardcoded in query-expander.ts)
     },
   },
 

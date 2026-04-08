@@ -15,7 +15,6 @@ export interface FeatureFlags {
   query_planner: FeatureFlag
   query_expansion: FeatureFlag
   cross_encoder_reranking: FeatureFlag
-  response_caching: FeatureFlag
   answer_evaluator: FeatureFlag
 }
 
@@ -117,19 +116,11 @@ export class FeatureFlagService {
         enabled: false,
         config: { max_chars: 500 }
       },
-      response_caching: {
-        enabled: false,
-        config: { ttl_seconds: 300, max_size_mb: 50 }
-      },
       answer_evaluator: {
         enabled: true,
         config: {
-          min_answer_length: 50,
-          min_score_for_iteration: 85,
-          min_accuracy: 7,
-          min_clarity: 7,
-          min_faithfulness: 0.7,
-          max_iterations: 3
+          min_score_for_iteration: 85,  // Composite score threshold (0-100)
+          max_iterations: 3              // Maximum refinement attempts
         }
       }
     }

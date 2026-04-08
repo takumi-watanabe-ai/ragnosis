@@ -38,21 +38,29 @@ export const PATTERNS = {
 // ============================================================================
 
 export const THRESHOLDS = {
-  // Answer quality
-  MIN_ANSWER_LENGTH: 50,
-  MIN_SCORE_FOR_ITERATION: 70,  // Total score threshold
-  MIN_ACCURACY: 7,   // Hard requirement: must have citations
-  MIN_CLARITY: 7,    // Hard requirement: must have structure
-  MIN_FAITHFULNESS: 0.7,
-  MAX_ITERATIONS: 3,
+  // Answer evaluation (managed via database feature flags)
+  // See: services/feature-flags.ts (answer_evaluator config)
 
   // Search & ranking
+  RRF_K: 60,  // Reciprocal Rank Fusion constant
+  AUGMENTATION_THRESHOLD: 0.6,  // When to add top models/repos
+  MIN_AUGMENTED_COUNT: 10,  // Minimum items to add
+  AUGMENTED_INITIAL_SCORE: 0.5,  // Starting score for augmented items
   MAX_TASKS_IN_PROMPT: 15,
   MAX_CROSS_ENCODER_CHARS: 500,
 
   // Filters
   MIN_STARS_FOR_LANGUAGE: 500,
   MIN_REPOS_FOR_LANGUAGE: 5,
+
+  // LLM configuration
+  LLM_RETRY_MAX_ATTEMPTS: 3,
+  LLM_RETRY_BASE_WAIT_SECONDS: 5,
+  LLM_INSIGHT_CONFIDENCE: 0.8,
+
+  // Evaluation confidence levels (for display only)
+  EVAL_CONFIDENCE_HIGH: 85,
+  EVAL_CONFIDENCE_MEDIUM: 60,
 } as const
 
 // ============================================================================
@@ -67,9 +75,17 @@ export const WEIGHTS = {
     github_repo: 0.5,
   },
 
-  // RRF fusion
+  // RRF fusion (normalized in code using config.search.reranker.fusion weights)
   VECTOR_WEIGHT: 1.0,
   BM25_WEIGHT: 1.0,
+
+  // Answer evaluation scoring weights (sum to 100%)
+  EVALUATION: {
+    RELEVANCY: 3.5,    // 35% - Most important
+    ACCURACY: 3.0,     // 30% - Citations and correctness
+    CLARITY: 1.75,     // 17.5% - Structure and readability
+    SPECIFICITY: 1.75, // 17.5% - Depth and detail
+  },
 } as const
 
 // ============================================================================

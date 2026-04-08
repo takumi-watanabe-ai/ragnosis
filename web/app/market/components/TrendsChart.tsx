@@ -27,14 +27,56 @@ interface KeywordSummary {
 interface TrendsChartProps {
   trendsData: TrendsTimeSeries[];
   maxTableRows?: number;
+  maxKeywords?: number;
 }
 
-export function TrendsChart({ trendsData, maxTableRows }: TrendsChartProps) {
+function filterTopKeywords(
+  trendsData: TrendsTimeSeries[],
+  maxKeywords: number,
+): TrendsTimeSeries[] {
+  if (trendsData.length === 0) return [];
+
+  // Get latest date
+  const dates = Array.from(new Set(trendsData.map((t) => t.date))).sort();
+  const latestDate = dates[dates.length - 1];
+
+  // Calculate current interest for each keyword
+  const allKeywords = Array.from(new Set(trendsData.map((t) => t.keyword)));
+  const keywordInterest = allKeywords.map((keyword) => {
+    const currentInterest =
+      trendsData.find((t) => t.date === latestDate && t.keyword === keyword)
+        ?.interest || 0;
+    return { keyword, currentInterest };
+  });
+
+  // Get top N keywords
+  const topKeywords = new Set(
+    keywordInterest
+      .sort((a, b) => b.currentInterest - a.currentInterest)
+      .slice(0, maxKeywords)
+      .map((k) => k.keyword),
+  );
+
+  // Filter data to only include top keywords
+  return trendsData.filter((t) => topKeywords.has(t.keyword));
+}
+
+export function TrendsChart({
+  trendsData,
+  maxTableRows,
+  maxKeywords = 8,
+}: TrendsChartProps) {
   const leftMargin = useResponsiveMargin();
   const rightMargin = useResponsiveRightMargin();
   const yOffset = useResponsiveYOffset();
+
+  // Limit to top N keywords by current interest
+  const filteredData = maxKeywords
+    ? filterTopKeywords(trendsData, maxKeywords)
+    : trendsData;
+
   const { chartData, keywords, colors, summaries } =
-    prepareTrendsChartData(trendsData);
+    prepareTrendsChartData(filteredData);
 
   if (chartData.length === 0) {
     return null;
@@ -183,13 +225,15 @@ export function TrendsChart({ trendsData, maxTableRows }: TrendsChartProps) {
         <div className="text-xs text-charcoal font-light leading-relaxed space-y-2">
           <p>
             <span className="font-medium">Insight:</span> Rankings based on
-            latest search interest. Trend arrows show interest change vs.
-            previous period (↑ increased, ↓ decreased, − unchanged).
+            latest search interest using cross-batch normalization (RAG as
+            baseline). Trend arrows show interest change vs. previous period (↑
+            increased, ↓ decreased, − unchanged).
           </p>
           <p className="text-stone">
-            <span className="font-medium">Note:</span> Each keyword is
-            normalized to its own 0-100 scale (100 = peak for that keyword).
-            Keywords are not directly comparable in absolute search volume.
+            <span className="font-medium">Data Quality:</span> All keywords are
+            normalized relative to &ldquo;RAG&rdquo; to enable fair comparison
+            across different Google Trends batches. Values represent relative
+            search interest, not absolute volume.
           </p>
         </div>
       </div>

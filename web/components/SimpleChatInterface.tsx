@@ -581,7 +581,7 @@ export const SimpleChatInterface = forwardRef<
                               </div>
                             ),
                             thead: ({ children }) => (
-                              <thead className="border-b-2 border-charcoal">
+                              <thead className="border-b border-stone-border">
                                 {children}
                               </thead>
                             ),

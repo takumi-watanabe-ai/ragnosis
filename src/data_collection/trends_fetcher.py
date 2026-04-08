@@ -6,6 +6,7 @@ Tracks public search interest to predict adoption trends.
 
 import json
 import logging
+import random
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -84,6 +85,7 @@ class GoogleTrendsFetcher:
         timeframe: str = "today 12-m",  # Last 12 months
         geo: str = "",  # '' = worldwide
         max_keywords_per_request: int = 5,
+        reference_keyword: str = "RAG",  # Baseline for cross-batch normalization
     ) -> List[TrendData]:
         """
         Fetch Google Trends data for keywords.
@@ -105,87 +107,176 @@ class GoogleTrendsFetcher:
 
         logger.info(f"📊 Fetching Google Trends data for {len(keywords)} keywords...")
         logger.info(f"   Timeframe: {timeframe}, Geo: {geo or 'Worldwide'}")
+        logger.info(f"   Using '{reference_keyword}' as normalization baseline")
 
         all_trends = []
+        reference_data = None  # Store reference keyword data for normalization
 
         # Process in batches (Google Trends limit: 5 keywords per request)
+        # Include reference keyword in each batch for cross-batch normalization
         for i in range(0, len(keywords), max_keywords_per_request):
             batch = keywords[i : i + max_keywords_per_request]
-            logger.info(f"\n🔍 Processing batch: {', '.join(batch)}")
 
-            try:
-                # Build payload
-                self.pytrends.build_payload(batch, timeframe=timeframe, geo=geo)
+            # Add reference keyword if not already in batch (use 4 keywords + reference)
+            if reference_keyword not in batch:
+                # Reduce batch size to 4 to make room for reference
+                batch = keywords[i : i + max_keywords_per_request - 1]
+                batch_with_ref = [reference_keyword] + batch
+            else:
+                batch_with_ref = batch
 
-                # Get interest over time
-                interest_df = self.pytrends.interest_over_time()
+            logger.info(f"\n🔍 Processing batch: {', '.join(batch_with_ref)}")
 
-                if interest_df.empty:
-                    logger.warning(f"⚠️  No data for batch: {batch}")
-                    time.sleep(2)  # Rate limiting
-                    continue
+            # Retry logic with exponential backoff
+            max_retries = 3
+            base_delay = 10
 
-                # Process each keyword in batch
-                for keyword in batch:
-                    if keyword not in interest_df.columns:
-                        continue
-
-                    trend_data = self._parse_trend_data(
-                        keyword=keyword,
-                        interest_df=interest_df,
-                        timeframe=timeframe,
-                        geo=geo,
+            for attempt in range(max_retries):
+                try:
+                    # Build payload with reference keyword
+                    self.pytrends.build_payload(
+                        batch_with_ref, timeframe=timeframe, geo=geo
                     )
 
-                    if trend_data:
-                        all_trends.append(trend_data)
+                    # Get interest over time
+                    interest_df = self.pytrends.interest_over_time()
+
+                    if interest_df.empty:
+                        logger.warning(f"⚠️  No data for batch: {batch_with_ref}")
+                        time.sleep(5)  # Rate limiting
+                        break
+
+                    # Store reference keyword data from first batch
+                    if reference_data is None and reference_keyword in interest_df.columns:
+                        reference_data = interest_df[reference_keyword].copy()
                         logger.info(
-                            f"✓ {keyword}: Avg={trend_data.avg_interest:.1f}, "
-                            f"Current={trend_data.current_interest}"
+                            f"📌 Stored reference data for '{reference_keyword}' "
+                            f"(avg={reference_data.mean():.1f})"
                         )
 
-                # Get related queries for first keyword in batch
-                try:
-                    related = self.pytrends.related_queries()
-                    if related and batch[0] in related:
-                        # Store in trend data
-                        for trend in all_trends:
-                            if trend.keyword == batch[0]:
-                                trend.related_queries = self._format_related_queries(
-                                    related[batch[0]]
-                                )
-                                break
+                    # Calculate normalization factor for this batch
+                    norm_factor = 1.0
+                    if (
+                        reference_data is not None
+                        and reference_keyword in interest_df.columns
+                    ):
+                        current_ref_avg = interest_df[reference_keyword].mean()
+                        baseline_ref_avg = reference_data.mean()
+                        if current_ref_avg > 0:
+                            norm_factor = baseline_ref_avg / current_ref_avg
+                            logger.info(
+                                f"🔧 Normalization factor: {norm_factor:.3f} "
+                                f"(baseline: {baseline_ref_avg:.1f}, current: {current_ref_avg:.1f})"
+                            )
+
+                    # Process each keyword in original batch (skip reference if added)
+                    for keyword in batch:
+                        if keyword not in interest_df.columns:
+                            continue
+
+                        trend_data = self._parse_trend_data(
+                            keyword=keyword,
+                            interest_df=interest_df,
+                            timeframe=timeframe,
+                            geo=geo,
+                            normalization_factor=norm_factor,
+                        )
+
+                        if trend_data:
+                            all_trends.append(trend_data)
+                            logger.info(
+                                f"✓ {keyword}: Avg={trend_data.avg_interest:.1f}, "
+                                f"Current={trend_data.current_interest} (norm: {norm_factor:.3f})"
+                            )
+
+                    # Also process reference keyword if this is the first batch
+                    if i == 0 and reference_keyword in interest_df.columns:
+                        ref_trend_data = self._parse_trend_data(
+                            keyword=reference_keyword,
+                            interest_df=interest_df,
+                            timeframe=timeframe,
+                            geo=geo,
+                            normalization_factor=1.0,  # Reference is baseline
+                        )
+                        if ref_trend_data:
+                            all_trends.append(ref_trend_data)
+                            logger.info(
+                                f"✓ {reference_keyword} (baseline): Avg={ref_trend_data.avg_interest:.1f}, "
+                                f"Current={ref_trend_data.current_interest}"
+                            )
+
+                    # Get related queries for first keyword in batch
+                    try:
+                        related = self.pytrends.related_queries()
+                        if related and batch[0] in related:
+                            # Store in trend data
+                            for trend in all_trends:
+                                if trend.keyword == batch[0]:
+                                    trend.related_queries = self._format_related_queries(
+                                        related[batch[0]]
+                                    )
+                                    break
+                    except Exception as e:
+                        logger.debug(f"No related queries: {e}")
+
+                    # Success - break retry loop
+                    break
+
                 except Exception as e:
-                    logger.debug(f"No related queries: {e}")
+                    error_msg = str(e)
 
-                # Rate limiting
-                time.sleep(2)
+                    # Check if rate limited
+                    if "429" in error_msg or "Too Many Requests" in error_msg:
+                        if attempt < max_retries - 1:
+                            # Exponential backoff with jitter
+                            delay = base_delay * (2 ** attempt) + random.uniform(0, 5)
+                            logger.warning(
+                                f"⏳ Rate limited. Waiting {delay:.1f}s before retry "
+                                f"({attempt + 1}/{max_retries})..."
+                            )
+                            time.sleep(delay)
+                        else:
+                            logger.error(
+                                f"❌ Failed to fetch batch {batch} after {max_retries} attempts: {e}"
+                            )
+                    else:
+                        logger.error(f"❌ Failed to fetch batch {batch}: {e}")
+                        break
 
-            except Exception as e:
-                logger.error(f"❌ Failed to fetch batch {batch}: {e}")
-                time.sleep(5)
-                continue
+            # Rate limiting between batches (randomized to avoid patterns)
+            if i + max_keywords_per_request < len(keywords):
+                delay = random.uniform(12, 18)
+                logger.info(f"⏸️  Waiting {delay:.1f}s before next batch...")
+                time.sleep(delay)
 
         logger.info(f"\n✅ Fetched trends for {len(all_trends)} keywords")
         return all_trends
 
     def _parse_trend_data(
-        self, keyword: str, interest_df, timeframe: str, geo: str
+        self,
+        keyword: str,
+        interest_df,
+        timeframe: str,
+        geo: str,
+        normalization_factor: float = 1.0,
     ) -> Optional[TrendData]:
-        """Parse trend data from DataFrame."""
+        """Parse trend data from DataFrame and apply normalization."""
         try:
             series = interest_df[keyword]
 
-            # Calculate metrics
-            avg_interest = float(series.mean())
-            peak_interest = int(series.max())
-            current_interest = int(series.iloc[-1])
+            # Calculate metrics with normalization
+            avg_interest = float(series.mean() * normalization_factor)
+            peak_interest = int(series.max() * normalization_factor)
+            current_interest = int(series.iloc[-1] * normalization_factor)
 
-            # Convert time series to list
+            # Convert time series to list with normalization
             time_series = []
             for date, value in series.items():
                 time_series.append(
-                    {"date": date.strftime("%Y-%m-%d"), "value": int(value)}
+                    {
+                        "date": date.strftime("%Y-%m-%d"),
+                        "value": int(value * normalization_factor),
+                    }
                 )
 
             # Determine category
@@ -296,6 +387,13 @@ def main():
     all_keywords = []
     for category_keywords in fetcher.RAG_KEYWORDS.values():
         all_keywords.extend(category_keywords)
+
+    num_batches = (len(all_keywords) + 4) // 5  # 5 keywords per batch
+    estimated_minutes = num_batches * 0.25  # ~15s per batch
+    logger.info(
+        f"\n⏱️  Fetching {len(all_keywords)} keywords in {num_batches} batches "
+        f"(~{estimated_minutes:.0f} minutes with rate limiting)\n"
+    )
 
     trends = fetcher.fetch_trends(
         keywords=all_keywords,

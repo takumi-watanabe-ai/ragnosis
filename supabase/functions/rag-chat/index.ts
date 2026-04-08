@@ -282,11 +282,7 @@ serve(async (req) => {
             // Get evaluation config from feature flags
             const featureFlags = getFeatureFlagService(supabase);
             const evalConfig = await featureFlags.getConfig<{
-              min_answer_length: number;
               min_score_for_iteration: number;
-              min_accuracy: number;
-              min_clarity: number;
-              min_faithfulness: number;
               max_iterations: number;
             }>("answer_evaluator");
             const MAX_ITERATIONS = evalConfig.max_iterations;
@@ -349,13 +345,11 @@ serve(async (req) => {
                 break;
               }
 
-              // Hard requirements: must pass ALL of these
-              const passesHardRequirements =
-                evaluation.accuracy >= evalConfig.min_accuracy && // MUST have proper citations
-                evaluation.clarity >= evalConfig.min_clarity && // MUST have structure
+              // Check if answer meets quality threshold (composite score)
+              const passesQualityThreshold =
                 evaluation.score >= evalConfig.min_score_for_iteration;
 
-              if (passesHardRequirements) {
+              if (passesQualityThreshold) {
                 logger.metrics(
                   `Answer quality: ${evaluation.score}/100 (${evaluation.confidence}) - ` +
                     `Relevancy: ${evaluation.relevancy}/10, Accuracy: ${evaluation.accuracy}/10, ` +
@@ -364,23 +358,10 @@ serve(async (req) => {
                 break;
               }
 
-              // Quality is poor - identify why
-              const failReasons: string[] = [];
-              if (evaluation.accuracy < evalConfig.min_accuracy) {
-                failReasons.push(
-                  `Accuracy ${evaluation.accuracy}/10 < ${evalConfig.min_accuracy} (missing citations)`,
-                );
-              }
-              if (evaluation.clarity < evalConfig.min_clarity) {
-                failReasons.push(
-                  `Clarity ${evaluation.clarity}/10 < ${evalConfig.min_clarity} (missing structure)`,
-                );
-              }
-              if (evaluation.score < evalConfig.min_score_for_iteration) {
-                failReasons.push(
-                  `Score ${evaluation.score}/100 < ${evalConfig.min_score_for_iteration}`,
-                );
-              }
+              // Quality needs improvement - use LLM-provided issues
+              const failReasons: string[] = [
+                `Score ${evaluation.score}/100 < ${evalConfig.min_score_for_iteration}`,
+              ];
 
               logger.metrics(
                 `Answer quality: ${evaluation.score}/100 - NEEDS IMPROVEMENT - ` +
@@ -409,25 +390,21 @@ serve(async (req) => {
 
               // Use top duplicate chunks from initial search
               if (availableDuplicates.length > 0) {
-                // Build user-friendly insight about what's missing
+                // Build user-friendly insight based on weakest dimension
                 let qualityIssue = "";
                 let whatWeNeed = "";
-                if (evaluation.accuracy < evalConfig.min_accuracy) {
-                  qualityIssue = "Answer needs more inline citations";
-                  whatWeNeed = "specific citations and examples";
-                } else if (evaluation.clarity < evalConfig.min_clarity) {
-                  qualityIssue = "Answer needs better structure";
-                  whatWeNeed = "organized sections and clearer flow";
-                } else if (evaluation.completeness < 7) {
-                  qualityIssue = "Answer needs more comprehensive coverage";
-                  whatWeNeed = "additional context and details";
-                } else if (evaluation.specificity < 7) {
-                  qualityIssue = "Answer needs more technical depth";
-                  whatWeNeed = "specific examples and technical details";
-                } else {
-                  qualityIssue = "Enhancing answer quality";
-                  whatWeNeed = "additional supporting information";
-                }
+
+                // Identify weakest dimension to guide refinement
+                const scores = [
+                  { name: 'accuracy', value: evaluation.accuracy, issue: 'Answer needs more inline citations', need: 'specific citations and examples' },
+                  { name: 'clarity', value: evaluation.clarity, issue: 'Answer needs better structure', need: 'organized sections and clearer flow' },
+                  { name: 'specificity', value: evaluation.specificity, issue: 'Answer needs more technical depth', need: 'specific examples and technical details' },
+                  { name: 'relevancy', value: evaluation.relevancy, issue: 'Answer needs better focus', need: 'more relevant information' },
+                ];
+
+                const weakest = scores.reduce((min, curr) => curr.value < min.value ? curr : min);
+                qualityIssue = weakest.issue;
+                whatWeNeed = weakest.need;
 
                 progressEmitter.emit("quality_checker", qualityIssue);
 
