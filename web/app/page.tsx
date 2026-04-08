@@ -230,7 +230,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-6 sm:gap-8">
               <a
-                href="https://github.com/yourusername"
+                href="https://github.com/takumi-watanabe-ai/RAGnosis"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
@@ -238,7 +238,7 @@ export default function Home() {
                 GitHub
               </a>
               <a
-                href="https://linkedin.com/in/yourusername"
+                href="https://www.linkedin.com/in/takumi-watanabe/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
