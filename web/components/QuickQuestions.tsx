@@ -33,7 +33,7 @@ export function QuickQuestions({ onSelectQuestion }: QuickQuestionsProps) {
           >
             <button
               onClick={() => toggleCategory(category.id)}
-              className="flex items-center justify-between w-full py-2.5 px-2 text-left text-xs font-normal text-charcoal hover:bg-cream transition-colors uppercase tracking-wide"
+              className="flex items-center justify-between w-full py-2.5 px-2 text-left text-[11px] font-normal text-charcoal hover:bg-cream transition-colors uppercase tracking-wide"
             >
               <span className="flex items-center gap-2">
                 <category.icon className="h-4 w-4 text-charcoal" />
@@ -51,7 +51,7 @@ export function QuickQuestions({ onSelectQuestion }: QuickQuestionsProps) {
                   <button
                     key={question.id}
                     onClick={() => onSelectQuestion(question.text)}
-                    className="block w-full text-left px-3 py-2.5 text-sm text-charcoal hover:bg-charcoal hover:text-cream transition-all leading-relaxed font-light"
+                    className="block w-full text-left px-3 py-2.5 text-xs text-charcoal hover:bg-charcoal hover:text-cream transition-all leading-relaxed font-light"
                   >
                     {question.text}
                   </button>

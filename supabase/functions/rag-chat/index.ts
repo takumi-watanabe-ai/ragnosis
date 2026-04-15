@@ -138,9 +138,21 @@ serve(async (req) => {
               return;
             }
 
+            // Capitalize the intent for display
+            const displayIntent = plan.intent.charAt(0).toUpperCase() + plan.intent.slice(1);
+
+            // Show descriptive message based on query type
+            const sourceMessage = {
+              "conceptual": "Searching articles database",
+              "market_intelligence": "Searching models, repos, and trending tools",
+              "implementation": "Searching code repositories and documentation",
+              "troubleshooting": "Searching technical resources",
+              "comparison": "Searching comprehensive sources"
+            }[plan.intent] || "Searching knowledge base";
+
             progressEmitter.emit(
               "query_planner",
-              `Query classified as "${plan.intent}". Searching ${plan.data_sources.length} data source(s).`,
+              `Query classified as "${displayIntent}". ${sourceMessage}.`,
             );
 
             // Show query insights (keywords, strategy)
@@ -153,7 +165,7 @@ serve(async (req) => {
               ) {
                 progressEmitter.emit(
                   "query_planner",
-                  `Boosting search with key terms: ${plan.insight.nouns.join(", ")}`,
+                  `Extracting key terms from query: ${plan.insight.nouns.join(", ")}`,
                 );
               }
             }
@@ -525,15 +537,18 @@ serve(async (req) => {
               }
             }
 
-            // Stream the final approved answer to the user
-            for (const char of fullAnswer) {
+            // Stream word-by-word for visible typing effect
+            const words = fullAnswer.split(/(\s+)/); // Split on whitespace but keep it
+            for (const word of words) {
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ type: "chunk", content: char })}\n\n`,
+                  `data: ${JSON.stringify({ type: "chunk", content: word })}\n\n`,
                 ),
               );
-              // Small delay to simulate streaming (adjust as needed)
-              await new Promise((resolve) => setTimeout(resolve, 5));
+              // Small delay between words for visible streaming
+              if (word.trim()) { // Only delay on actual words, not whitespace
+                await new Promise((resolve) => setTimeout(resolve, 30));
+              }
             }
 
             // Send completion marker

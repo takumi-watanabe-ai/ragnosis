@@ -34,7 +34,7 @@ export const quickQuestions: QuickQuestion[] = [
   },
   {
     id: "start-4",
-    text: "RAG vs fine-tuning - which is better?",
+    text: "RAG vs fine-tuning: which is better?",
     category: "getting-started",
   },
 
@@ -161,7 +161,7 @@ export const quickQuestions: QuickQuestion[] = [
   },
   {
     id: "trouble-2",
-    text: "My RAG returns irrelevant results - how to fix?",
+    text: "My RAG returns irrelevant results: how to fix?",
     category: "troubleshooting",
   },
   {

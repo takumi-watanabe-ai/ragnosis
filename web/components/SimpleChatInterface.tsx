@@ -209,16 +209,16 @@ export const SimpleChatInterface = forwardRef<
             prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
-                  ...msg,
-                  progress: [
-                    ...(msg.progress || []),
-                    {
-                      step: event.step || "unknown",
-                      message: event.message || "",
-                      data: event.data,
-                    },
-                  ],
-                }
+                    ...msg,
+                    progress: [
+                      ...(msg.progress || []),
+                      {
+                        step: event.step || "unknown",
+                        message: event.message || "",
+                        data: event.data,
+                      },
+                    ],
+                  }
                 : msg,
             ),
           );
@@ -228,10 +228,10 @@ export const SimpleChatInterface = forwardRef<
             prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
-                  ...msg,
-                  sources: event.sources || [],
-                  metadata: event.metadata,
-                }
+                    ...msg,
+                    sources: event.sources || [],
+                    metadata: event.metadata,
+                  }
                 : msg,
             ),
           );
@@ -250,9 +250,9 @@ export const SimpleChatInterface = forwardRef<
             prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
-                  ...msg,
-                  content: `Error: ${event.message || "Unknown error"}`,
-                }
+                    ...msg,
+                    content: `Error: ${event.message || "Unknown error"}`,
+                  }
                 : msg,
             ),
           );
@@ -264,9 +264,9 @@ export const SimpleChatInterface = forwardRef<
         prev.map((msg) =>
           msg.id === assistantMessageId
             ? {
-              ...msg,
-              content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
-            }
+                ...msg,
+                content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
+              }
             : msg,
         ),
       );
@@ -342,7 +342,8 @@ export const SimpleChatInterface = forwardRef<
           {messages.length === 0 && (
             <div className="flex flex-col items-start justify-start pt-16 max-w-2xl">
               <h1 className="text-3xl sm:text-4xl font-light mb-4 text-charcoal leading-tight">
-                Diagnose your Retrieval-Augmented Generation
+                Diagnose your <br />
+                Retrieval-Augmented Generation
               </h1>
               <p className="text-lg sm:text-xl text-stone mb-6 leading-relaxed max-w-xl font-light">
                 Ask questions about RAG models, implementations, or trends.
@@ -388,7 +389,7 @@ export const SimpleChatInterface = forwardRef<
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`py-8 ${message.role === "user" ? "max-w-2xl ml-auto" : "max-w-3xl"}`}
+              className={`py-4 ${message.role === "user" ? "max-w-2xl ml-auto" : "max-w-3xl"}`}
             >
               {message.role === "assistant" && (
                 <div className="text-xs text-stone mb-4 uppercase tracking-wider font-normal">
@@ -607,7 +608,7 @@ export const SimpleChatInterface = forwardRef<
                       >
                         <span>
                           {expandedSources.has(message.id)
-                            ? "Hide Sources"
+                            ? `Hide (${message.sources.length})`
                             : `Sources (${message.sources.length})`}
                         </span>
                         <SourceIcons sources={message.sources} size="sm" />

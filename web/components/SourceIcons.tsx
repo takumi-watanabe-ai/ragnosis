@@ -62,8 +62,8 @@ export function SourceIcons({ sources, size = "sm" }: SourceIconsProps) {
   }
 
   return (
-    <div className="flex items-center -space-x-2">
-      {uniqueIcons.slice(0, 5).map((icon, idx) => (
+    <div className="flex items-center -space-x-0.5">
+      {uniqueIcons.map((icon, idx) => (
         <div
           key={idx}
           className="relative rounded-full bg-white border border-stone-border overflow-hidden"
@@ -82,17 +82,6 @@ export function SourceIcons({ sources, size = "sm" }: SourceIconsProps) {
           />
         </div>
       ))}
-      {uniqueIcons.length > 5 && (
-        <div
-          className="flex items-center justify-center rounded-full bg-stone-200 text-charcoal text-[10px] font-medium border border-stone-border"
-          style={{
-            width: iconSize,
-            height: iconSize,
-          }}
-        >
-          +{uniqueIcons.length - 5}
-        </div>
-      )}
     </div>
   );
 }
