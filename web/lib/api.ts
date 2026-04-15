@@ -1,3 +1,5 @@
+import { getSessionId } from "./session";
+
 export interface SearchResult {
   position: number;
   name: string;
@@ -70,7 +72,11 @@ export async function sendChatMessage(query: string): Promise<ChatResponse> {
   const response = await fetch(edgeFunctionUrl, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query, stream: false }),
+    body: JSON.stringify({
+      query,
+      stream: false,
+      session_id: getSessionId(),
+    }),
   });
 
   if (!response.ok) {
@@ -108,7 +114,11 @@ export async function* sendChatMessageStream(
   const response = await fetch(edgeFunctionUrl, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query, stream: true }),
+    body: JSON.stringify({
+      query,
+      stream: true,
+      session_id: getSessionId(),
+    }),
   });
 
   if (!response.ok) {

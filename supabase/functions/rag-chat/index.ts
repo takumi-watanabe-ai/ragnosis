@@ -22,6 +22,12 @@ import { RESPONSE_MESSAGES, SEPARATOR, LOG_PREFIX } from "./utils/constants.ts";
 import { cleanPartSuffix } from "./utils/formatters.ts";
 import { logger } from "./utils/logger.ts";
 import { getFeatureFlagService } from "./services/feature-flags.ts";
+import {
+  extractSessionId,
+  extractUserIp,
+  checkRateLimit,
+  logSearch,
+} from "./search-logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": config.cors.allowOrigin,
@@ -40,13 +46,41 @@ serve(async (req) => {
   }
 
   try {
-    const { query, stream = true } = await req.json();
+    const body = await req.json();
+    const { query, stream = true } = body;
 
     if (!query) {
       return new Response(
         JSON.stringify({ error: RESPONSE_MESSAGES.NO_QUERY }),
         {
           status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Extract session and IP for tracking (no custom headers = no CORS issues)
+    const sessionId = extractSessionId(body);
+    const userIp = extractUserIp(req);
+    const startTime = Date.now();
+
+    // Check rate limit
+    const rateLimitCheck = await checkRateLimit(supabase, sessionId, userIp);
+    if (!rateLimitCheck.allowed) {
+      // Log the blocked request
+      await logSearch(supabase, {
+        query,
+        session_id: sessionId,
+        user_ip: userIp,
+        success: false,
+        error_message: rateLimitCheck.reason,
+        response_time_ms: Date.now() - startTime,
+      });
+
+      return new Response(
+        JSON.stringify({ error: rateLimitCheck.reason }),
+        {
+          status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
@@ -554,12 +588,34 @@ serve(async (req) => {
             // Send completion marker
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 
+            // Log successful search
+            await logSearch(supabase, {
+              query,
+              session_id: sessionId,
+              user_ip: userIp,
+              intent: plan.intent,
+              num_sources: currentResults.length,
+              response_time_ms: Date.now() - startTime,
+              success: true,
+            });
+
             logger.success(
               `Answer streamed successfully (${iteration} iteration(s))`,
             );
             console.log(`${SEPARATOR.SECTION}\n`);
           } catch (error) {
             console.error(`${LOG_PREFIX.ERROR} Streaming error:`, error);
+
+            // Log error
+            await logSearch(supabase, {
+              query,
+              session_id: sessionId,
+              user_ip: userIp,
+              success: false,
+              error_message: error instanceof Error ? error.message : "Streaming error",
+              response_time_ms: Date.now() - startTime,
+            });
+
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
@@ -713,6 +769,17 @@ serve(async (req) => {
         },
       };
 
+      // Log successful search
+      await logSearch(supabase, {
+        query,
+        session_id: sessionId,
+        user_ip: userIp,
+        intent: plan.intent,
+        num_sources: results.length,
+        response_time_ms: Date.now() - startTime,
+        success: true,
+      });
+
       logger.success(`Answer generated successfully`);
       console.log(`${SEPARATOR.SECTION}\n`);
 
@@ -722,6 +789,23 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error(`${LOG_PREFIX.ERROR} Error:`, error);
+
+    // Try to log the error (may not have all context)
+    try {
+      const body = await req.clone().json();
+      const sessionId = extractSessionId(body);
+      const userIp = extractUserIp(req);
+
+      await logSearch(supabase, {
+        query: body.query || "unknown",
+        session_id: sessionId,
+        user_ip: userIp,
+        success: false,
+        error_message: error instanceof Error ? error.message : "Internal server error",
+      });
+    } catch (logError) {
+      console.error("Failed to log error:", logError);
+    }
 
     return new Response(
       JSON.stringify({
