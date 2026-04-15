@@ -29,13 +29,6 @@ export interface GenerateResult {
   usage?: TokenUsage;
 }
 
-export interface Message {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
-
-export type PromptInput = string | Message[];
-
 type LLMProvider = "openrouter" | "ollama";
 
 interface ProviderConfig {
@@ -277,21 +270,11 @@ export class LLMClient {
    * Generate API call (for text generation)
    * Returns content only for backwards compatibility
    */
-  /**
-   * Convert PromptInput to messages array
-   */
-  private toMessages(promptInput: PromptInput): Message[] {
-    if (typeof promptInput === "string") {
-      return [{ role: "user", content: promptInput }];
-    }
-    return promptInput;
-  }
-
   async generate(
-    promptInput: PromptInput,
+    prompt: string,
     options: GenerateOptions = {},
   ): Promise<string> {
-    const result = await this.generateWithUsage(promptInput, options);
+    const result = await this.generateWithUsage(prompt, options);
     return result.content;
   }
 
@@ -299,7 +282,7 @@ export class LLMClient {
    * Generate API call with token usage tracking
    */
   async generateWithUsage(
-    promptInput: PromptInput,
+    prompt: string,
     options: GenerateOptions = {},
     onRetry?: (attempt: number, waitSeconds: number) => void,
   ): Promise<GenerateResult> {
@@ -308,20 +291,18 @@ export class LLMClient {
       maxTokens = config.llm.answer.maxTokens,
     } = options;
 
-    const messages = this.toMessages(promptInput);
-
     try {
       return await retryWithBackoff(
         async () => {
           if (this.provider === "openrouter") {
             return await this.generateOpenRouterWithUsage(
-              messages,
+              prompt,
               temperature,
               maxTokens,
             );
           } else {
             return await this.generateOllamaWithUsage(
-              messages,
+              prompt,
               temperature,
               maxTokens,
             );
@@ -356,7 +337,7 @@ export class LLMClient {
    * OpenRouter generate with token usage tracking
    */
   private async generateOpenRouterWithUsage(
-    messages: Message[],
+    prompt: string,
     temperature: number,
     maxTokens: number,
   ): Promise<GenerateResult> {
@@ -372,7 +353,7 @@ export class LLMClient {
       headers,
       body: JSON.stringify({
         model: this.model,
-        messages,
+        messages: [{ role: "user", content: prompt }],
         temperature,
         max_tokens: maxTokens,
       }),
@@ -424,19 +405,10 @@ export class LLMClient {
    * Ollama generate with token usage tracking
    */
   private async generateOllamaWithUsage(
-    messages: Message[],
+    prompt: string,
     temperature: number,
     maxTokens: number,
   ): Promise<GenerateResult> {
-    // Ollama uses prompt format, not messages - convert messages to prompt
-    const prompt = messages
-      .map((m) => {
-        if (m.role === "system") return `System: ${m.content}`;
-        if (m.role === "user") return `User: ${m.content}`;
-        return m.content;
-      })
-      .join("\n\n");
-
     const response = await fetch(`${this.baseUrl}/api/generate`, {
       method: "POST",
       headers: {
@@ -480,7 +452,7 @@ export class LLMClient {
    * Generate API call with streaming support (for text generation)
    */
   async *generateStream(
-    promptInput: PromptInput,
+    prompt: string,
     options: GenerateOptions = {},
     onRetry?: (attempt: number, waitSeconds: number) => void,
   ): AsyncIterableIterator<string> {
@@ -488,8 +460,6 @@ export class LLMClient {
       temperature = config.llm.answer.temperature,
       maxTokens = config.llm.answer.maxTokens,
     } = options;
-
-    const messages = this.toMessages(promptInput);
 
     // Retry the initial connection, then stream
     let attempt = 0;
@@ -499,9 +469,9 @@ export class LLMClient {
       attempt++;
       try {
         if (this.provider === "openrouter") {
-          yield* this.generateStreamOpenRouter(messages, temperature, maxTokens);
+          yield* this.generateStreamOpenRouter(prompt, temperature, maxTokens);
         } else {
-          yield* this.generateStreamOllama(messages, temperature, maxTokens);
+          yield* this.generateStreamOllama(prompt, temperature, maxTokens);
         }
         break; // Success, exit retry loop
       } catch (error) {
@@ -533,7 +503,7 @@ export class LLMClient {
    * OpenRouter streaming generate implementation
    */
   private async *generateStreamOpenRouter(
-    messages: Message[],
+    prompt: string,
     temperature: number,
     maxTokens: number,
   ): AsyncIterableIterator<string> {
@@ -549,7 +519,7 @@ export class LLMClient {
       headers,
       body: JSON.stringify({
         model: this.model,
-        messages,
+        messages: [{ role: "user", content: prompt }],
         temperature,
         max_tokens: maxTokens,
         stream: true, // Enable streaming
@@ -630,19 +600,10 @@ export class LLMClient {
    * Ollama streaming generate implementation
    */
   private async *generateStreamOllama(
-    messages: Message[],
+    prompt: string,
     temperature: number,
     maxTokens: number,
   ): AsyncIterableIterator<string> {
-    // Ollama uses prompt format, not messages - convert messages to prompt
-    const prompt = messages
-      .map((m) => {
-        if (m.role === "system") return `System: ${m.content}`;
-        if (m.role === "user") return `User: ${m.content}`;
-        return m.content;
-      })
-      .join("\n\n");
-
     const response = await fetch(`${this.baseUrl}/api/generate`, {
       method: "POST",
       headers: {

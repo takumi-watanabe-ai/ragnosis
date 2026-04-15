@@ -6,7 +6,7 @@
 import type { SearchResult, QueryIntent } from "./types.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { config } from "./config.ts";
-import { getLLMClient, type Message } from "./services/llm-client.ts";
+import { getLLMClient } from "./services/llm-client.ts";
 import { PATTERNS, RESPONSE_MESSAGES, LOG_PREFIX } from "./utils/constants.ts";
 import { cleanPartSuffix, markdownLink, truncate } from "./utils/formatters.ts";
 
@@ -106,11 +106,11 @@ export async function* generateAnswerStreamWithFeedback(
 ): AsyncIterableIterator<string> {
   const isListQuery = PATTERNS.LIST_QUERY.test(query);
 
-  let messages: Message[];
+  let prompt: string;
   if (intent === "market_intelligence" && isListQuery && results.length > 0) {
-    messages = buildMarketIntelligencePrompt(query, results);
+    prompt = buildMarketIntelligencePrompt(query, results);
   } else {
-    messages = buildAnswerPrompt(query, results, intent);
+    prompt = buildAnswerPrompt(query, results, intent);
   }
 
   const improvementGuidance = `
@@ -132,13 +132,10 @@ Generate a complete rewrite addressing every issue above.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 
-  // Append improvement guidance to user message (last message)
-  const messagesWithFeedback = [...messages];
-  const lastMessage = messagesWithFeedback[messagesWithFeedback.length - 1];
-  lastMessage.content += improvementGuidance;
+  const improvedPrompt = prompt + improvementGuidance;
 
   try {
-    yield* generateWithLLMStream(messagesWithFeedback);
+    yield* generateWithLLMStream(improvedPrompt);
   } catch (error) {
     console.error(
       `${LOG_PREFIX.ERROR} Answer generation with feedback failed:`,
@@ -154,7 +151,7 @@ Generate a complete rewrite addressing every issue above.
 function buildMarketIntelligencePrompt(
   query: string,
   results: SearchResult[],
-): Message[] {
+): string {
   const docType = results[0]?.doc_type;
   let context = "TOP RESULTS:\n\n";
 
@@ -184,7 +181,11 @@ function buildMarketIntelligencePrompt(
     context += "\n";
   });
 
-  const instructions = `ANSWER REQUIREMENTS:
+  return `${context}
+
+Question: ${query}
+
+ANSWER REQUIREMENTS:
 
 1. For EACH item, provide:
    - Name as clickable link: **[Name](URL)**
@@ -223,27 +224,18 @@ Answer format for GitHub repos:
    - **Best for**: [From description] [1]
 
 ## Choosing the Right One
-- [Decision guide from data above with [1], [2] citations]`;
+- [Decision guide from data above with [1], [2] citations]
 
-  return [
-    {
-      role: "system",
-      content: instructions,
-    },
-    {
-      role: "user",
-      content: `${context}\n\nQuestion: ${query}\n\nAnswer:`,
-    },
-  ];
+Answer:`;
 }
 
 /**
  * Generate answer with LLM (includes token tracking)
  */
-async function generateWithLLM(promptInput: string | Message[]): Promise<string> {
+async function generateWithLLM(prompt: string): Promise<string> {
   try {
     const llmClient = getLLMClient();
-    const result = await llmClient.generateWithUsage(promptInput, {
+    const result = await llmClient.generateWithUsage(prompt, {
       temperature: 0.3,
       maxTokens: 1000,
     });
@@ -265,7 +257,7 @@ async function generateWithLLM(promptInput: string | Message[]): Promise<string>
  * Generate answer with LLM using streaming (includes retry logic)
  */
 async function* generateWithLLMStream(
-  promptInput: string | Message[],
+  prompt: string,
 ): AsyncIterableIterator<string> {
   try {
     const llmClient = getLLMClient();
@@ -278,7 +270,7 @@ async function* generateWithLLMStream(
     };
 
     yield* llmClient.generateStream(
-      promptInput,
+      prompt,
       {
         temperature: 0.3,
         maxTokens: 1000,
@@ -301,7 +293,7 @@ function buildAnswerPrompt(
   query: string,
   results: SearchResult[],
   intent: QueryIntent,
-): Message[] {
+): string {
   // Build context from results with smart sizing
   // Note: Citation markers are already added in index.ts
   let context = "SOURCES:\n";
@@ -371,17 +363,14 @@ function buildAnswerPrompt(
   // Build intent-specific instructions
   const instructions = getInstructionsByIntent(intent);
 
-  // Use system/user message separation to prevent instruction leakage
-  return [
-    {
-      role: "system",
-      content: instructions,
-    },
-    {
-      role: "user",
-      content: `${context}\n\nUSER QUESTION: ${query}\n\nYOUR ANSWER:`,
-    },
-  ];
+  // Put instructions BEFORE question so LLM reads them first
+  return `${instructions}
+
+${context}
+
+USER QUESTION: ${query}
+
+YOUR ANSWER:`;
 }
 
 /**
