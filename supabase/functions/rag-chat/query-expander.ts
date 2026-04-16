@@ -28,13 +28,12 @@ Original query: "${originalQuery}"
 
 Generate 2 semantic variations that:
 1. Preserve the exact intent and domain context of the original query
-2. Interpret ambiguous terms within the RAG/vector search/AI domain
-3. Use alternative technical terminology that experts in this field would use
-4. Maintain the same question type and scope
-5. Stay within the RAG/AI/ML domain - do not drift into unrelated software domains
-6. Write in the SAME LANGUAGE as the original
+2. Use alternative phrasing or question structure while keeping all technical terms accurate
+3. Maintain the same question type and scope
+4. Stay within the RAG/AI/ML domain
+5. Write in the SAME LANGUAGE as the original
 
-Focus on semantic diversity through different vocabulary while keeping technical accuracy within the RAG domain.
+IMPORTANT: Only rephrase what you know is factually correct. Never guess, expand, or reinterpret acronyms or technical terms. If uncertain about a term's meaning, use it exactly as given.
 
 Return EXACTLY 2 alternative queries, one per line. No numbering, bullets, or explanations. Just 2 lines.`;
 
@@ -42,7 +41,7 @@ Return EXACTLY 2 alternative queries, one per line. No numbering, bullets, or ex
     // Use LLM client (auto-detects OpenRouter/Ollama based on environment)
     const llmClient = getLLMClient();
     const responseText = await llmClient.generate(prompt, {
-      temperature: 0.7,
+      temperature: 0.3, // Low temperature for accuracy over creativity
       maxTokens: 300, // Increased for OpenRouter models (more verbose than Ollama)
     });
 

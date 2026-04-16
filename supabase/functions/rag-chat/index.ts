@@ -571,18 +571,21 @@ serve(async (req) => {
               }
             }
 
-            // Stream word-by-word for visible typing effect
-            const words = fullAnswer.split(/(\s+)/); // Split on whitespace but keep it
-            for (const word of words) {
+            // Stream in multi-word chunks for balanced speed
+            // Split on whitespace but keep it, then group into chunks of ~5 words
+            const words = fullAnswer.split(/(\s+)/);
+            const chunkSize = 10; // ~5 words (words + spaces)
+
+            for (let i = 0; i < words.length; i += chunkSize) {
+              const chunk = words.slice(i, i + chunkSize).join("");
+
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ type: "chunk", content: word })}\n\n`,
+                  `data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`,
                 ),
               );
-              // Small delay between words for visible streaming
-              if (word.trim()) { // Only delay on actual words, not whitespace
-                await new Promise((resolve) => setTimeout(resolve, 30));
-              }
+              // Small delay for readable streaming pace
+              await new Promise((resolve) => setTimeout(resolve, 50));
             }
 
             // Send completion marker
@@ -604,29 +607,59 @@ serve(async (req) => {
             );
             console.log(`${SEPARATOR.SECTION}\n`);
           } catch (error) {
-            console.error(`${LOG_PREFIX.ERROR} Streaming error:`, error);
+            // Check if this is a client disconnect (expected behavior)
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const isClientDisconnect =
+              errorMessage.includes("connection closed") ||
+              errorMessage.includes("controller") ||
+              errorMessage.toLowerCase().includes("cancel");
 
-            // Log error
-            await logSearch(supabase, {
-              query,
-              session_id: sessionId,
-              user_ip: userIp,
-              success: false,
-              error_message: error instanceof Error ? error.message : "Streaming error",
-              response_time_ms: Date.now() - startTime,
-            });
+            if (isClientDisconnect) {
+              console.log(`ℹ️  USER DISCONNECTED: Client closed connection during streaming (user closed tab/navigated away) - Expected user behavior, not a system error`);
 
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "error",
-                  message:
-                    error instanceof Error ? error.message : "Streaming error",
-                })}\n\n`,
-              ),
-            );
+              // Log with clear indication of user disconnect
+              await logSearch(supabase, {
+                query,
+                session_id: sessionId,
+                user_ip: userIp,
+                success: false,
+                error_message: "USER_DISCONNECT: Client left session (not a system error)",
+                response_time_ms: Date.now() - startTime,
+              });
+            } else {
+              // Actual system error
+              console.error(`${LOG_PREFIX.ERROR} Streaming error (SYSTEM ISSUE):`, error);
+
+              await logSearch(supabase, {
+                query,
+                session_id: sessionId,
+                user_ip: userIp,
+                success: false,
+                error_message: errorMessage,
+                response_time_ms: Date.now() - startTime,
+              });
+
+              // Try to send error to client (may fail if client disconnected)
+              try {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      type: "error",
+                      message: errorMessage,
+                    })}\n\n`,
+                  ),
+                );
+              } catch (enqueueError) {
+                // Client disconnected - can't send error
+              }
+            }
           } finally {
-            controller.close();
+            // Close stream if not already closed
+            try {
+              controller.close();
+            } catch (closeError) {
+              // Stream already closed - expected when client disconnects
+            }
           }
         },
       });
